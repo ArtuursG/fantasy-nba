@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from datetime import date
 
 from fantasy.analysis.context import Context
 from fantasy.analysis.schedule import DayPlan, plan_days
@@ -51,15 +52,30 @@ def _sum_lines(ctx: Context, plans: list[DayPlan]) -> dict[str, float]:
     return totals
 
 
-def project_side(ctx: Context, team: Team, side: MatchupSide | None) -> SideProjection:
-    remaining = plan_days(ctx.calendar, ctx.snap, team, ctx.values, ctx.sps, ctx.now)
-    elapsed = plan_days(ctx.calendar, ctx.snap, team, ctx.values, ctx.sps, ctx.now, remaining=False)
+def project_side(
+    ctx: Context,
+    team: Team,
+    side: MatchupSide | None,
+    elapsed: dict[str, float] | None = None,
+    available_from: dict[int, date] | None = None,
+) -> SideProjection:
+    """Projected rest of the matchup for a roster. `elapsed` reuses another
+    projection's estimate of what was played so far, so a simulated roster
+    move changes only the days ahead."""
+    remaining = plan_days(
+        ctx.calendar, ctx.snap, team, ctx.values, ctx.sps, ctx.now, available_from=available_from
+    )
+    if elapsed is None:
+        played = plan_days(
+            ctx.calendar, ctx.snap, team, ctx.values, ctx.sps, ctx.now, remaining=False
+        )
+        elapsed = _sum_lines(ctx, played)
     return SideProjection(
         team=team,
         side=side,
         remaining_plans=remaining,
         remaining=_sum_lines(ctx, remaining),
-        elapsed=_sum_lines(ctx, elapsed),
+        elapsed=elapsed,
     )
 
 
@@ -71,8 +87,9 @@ def _current(side: SideProjection, name: str) -> float | None:
     return side.side.stats.get(name) if side.side else None
 
 
-def _final_pct(side: SideProjection, cat: str) -> tuple[float | None, float, bool]:
-    """(projected final %, its standard deviation, attempts were estimated)."""
+def _final_pct(side: SideProjection, cat: str) -> tuple[float | None, float, bool, float]:
+    """(projected final %, its standard deviation, attempts were estimated,
+    projected total attempts)."""
     made_field, att_field = PCT_FIELDS[cat]
     made_name, att_name = PCT_PARTS[cat]
     pct_now = _current(side, cat)
@@ -86,10 +103,10 @@ def _final_pct(side: SideProjection, cat: str) -> tuple[float | None, float, boo
     made_rem, att_rem = side.remaining[made_field], side.remaining[att_field]
     attempts = att_now + att_rem
     if attempts <= 0:
-        return None, 0.0, estimated
+        return None, 0.0, estimated, 0.0
     rate = made_rem / att_rem if att_rem > 0 else 0.0
     sd = math.sqrt(att_rem * rate * (1 - rate)) / attempts
-    return (made_now + made_rem) / attempts, sd, estimated
+    return (made_now + made_rem) / attempts, sd, estimated, attempts
 
 
 def _final_count(side: SideProjection, cat: str) -> tuple[float, float]:
@@ -101,6 +118,101 @@ def win_probability(diff: float, sd: float) -> float:
     if sd <= 0:
         return 1.0 if diff > 0 else 0.0 if diff < 0 else 0.5
     return _normal_cdf(diff / sd)
+
+
+# z-score of a 70% chance: the edge a likely win needs, in standard deviations.
+LIKELY_Z = 0.5244
+
+
+def category_outlook(cat: str, mine: SideProjection, theirs: SideProjection) -> dict | None:
+    """Projected final for one category and the chance of winning it.
+
+    `edge` is my margin in the category's own units, turned around for TO so
+    that positive always means ahead; `sd` is the spread of that margin.
+    """
+    estimated, attempts = False, 0.0
+    if cat in PCT_FIELDS:
+        final_me, sd_me, est_me, attempts = _final_pct(mine, cat)
+        final_opp, sd_opp, est_opp, _ = _final_pct(theirs, cat)
+        estimated = est_me or est_opp
+    elif cat in CAT_FIELDS:
+        final_me, sd_me = _final_count(mine, cat)
+        final_opp, sd_opp = _final_count(theirs, cat)
+    else:
+        return None
+    sd = math.hypot(sd_me, sd_opp)
+    if final_me is None or final_opp is None:
+        edge, p_win = None, 0.5
+    else:
+        edge = final_me - final_opp
+        if cat in REVERSE_CATS:
+            edge = -edge
+        p_win = win_probability(edge, sd)
+    return {
+        "cat": cat,
+        "me": final_me,
+        "opp": final_opp,
+        "edge": edge,
+        "sd": sd,
+        "p_win": p_win,
+        "call": call(p_win),
+        "estimated": estimated,
+        "my_attempts": attempts,
+    }
+
+
+def record_odds(probabilities: list[float]) -> list[float]:
+    """Chance of winning exactly k categories, k = 0..n, treating categories
+    as independent (a Poisson-binomial distribution)."""
+    odds = [1.0]
+    for p in probabilities:
+        nxt = [0.0] * (len(odds) + 1)
+        for k, q in enumerate(odds):
+            nxt[k] += q * (1 - p)
+            nxt[k + 1] += q * p
+        odds = nxt
+    return odds
+
+
+def matchup_outlook(projected: list[dict]) -> dict:
+    """Expected categories won and the chance of winning more categories
+    than the opponent."""
+    probabilities = [r["p_win"] for r in projected]
+    odds = record_odds(probabilities)
+    n = len(probabilities)
+    return {
+        "categories": n,
+        "expected_wins": sum(probabilities),
+        "p_win_matchup": sum(q for k, q in enumerate(odds) if k > n - k),
+        "p_at_least": {k: sum(odds[k:]) for k in range(n + 1)},
+    }
+
+
+def targets(projected: list[dict], mine: SideProjection) -> list[dict]:
+    """What it would take in each category short of a likely win: the margin
+    needed to draw even and to reach a 70% chance, in the category's units
+    (made shots for percentages), and per remaining usable game."""
+    games = max(mine.usable_remaining, 1)
+    rows = []
+    for r in projected:
+        if r["edge"] is None or r["p_win"] >= LIKELY:
+            continue
+        to_even = max(0.0, -r["edge"])
+        to_likely = max(0.0, LIKELY_Z * r["sd"] - r["edge"])
+        row = {
+            "cat": r["cat"],
+            "p_win": r["p_win"],
+            "edge": r["edge"],
+            "to_even": to_even,
+            "to_likely": to_likely,
+            "per_game": to_likely / games,
+            "makes_to_likely": None,
+        }
+        if r["cat"] in PCT_FIELDS:
+            row["makes_to_likely"] = to_likely * r["my_attempts"]
+            row["per_game"] = row["makes_to_likely"] / games
+        rows.append(row)
+    return rows
 
 
 def call(p_win: float) -> str:
@@ -148,25 +260,10 @@ def analyze_matchup(ctx: Context, mine: SideProjection, theirs: SideProjection) 
                 "result": my_side.results.get(cat) if my_side else None,
             }
         )
-        if cat in PCT_FIELDS:
-            final_me, sd_me, est_me = _final_pct(mine, cat)
-            final_opp, sd_opp, est_opp = _final_pct(theirs, cat)
-            estimated_attempts = estimated_attempts or est_me or est_opp
-        elif cat in CAT_FIELDS:
-            final_me, sd_me = _final_count(mine, cat)
-            final_opp, sd_opp = _final_count(theirs, cat)
-        else:
-            continue
-        if final_me is None or final_opp is None:
-            p_win = 0.5
-        else:
-            diff = final_me - final_opp
-            p_win = win_probability(
-                -diff if cat in REVERSE_CATS else diff, math.hypot(sd_me, sd_opp)
-            )
-        projected.append(
-            {"cat": cat, "me": final_me, "opp": final_opp, "p_win": p_win, "call": call(p_win)}
-        )
+        outlook = category_outlook(cat, mine, theirs)
+        if outlook is not None:
+            estimated_attempts = estimated_attempts or outlook["estimated"]
+            projected.append(outlook)
 
     first, last = ctx.calendar.date_of(ctx.sps[0]), ctx.calendar.date_of(ctx.sps[-1])
     return {
@@ -196,6 +293,8 @@ def analyze_matchup(ctx: Context, mine: SideProjection, theirs: SideProjection) 
             },
         },
         "attempts_estimated": estimated_attempts,
+        "outlook": matchup_outlook(projected),
+        "targets": targets(projected, mine),
     }
 
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 
+from fantasy.analysis.advanced import advanced_stats
 from fantasy.analysis.changes import compare
 from fantasy.analysis.context import Context
 from fantasy.analysis.freeagents import rank_free_agents
@@ -30,7 +31,8 @@ from fantasy.analysis.schedule import (
     plan_days,
     positions,
 )
-from fantasy.analysis.stats import average, usage_proxy
+from fantasy.analysis.simulator import simulate_moves
+from fantasy.analysis.stats import REVERSE_CATS, average, usage_proxy
 from fantasy.espn.constants import (
     BENCH_SLOT,
     C_SLOT,
@@ -126,6 +128,7 @@ def player_row(
         "last5_starts": info.starts_last5,
         "usage_proxy": _round(usage_proxy(season) if season else None),
         "usage_proxy_last5": _round(usage_proxy(last5) if info.last5 else None),
+        "advanced": advanced_stats(ctx, player),
         "roster_pct": _round(player.percent_owned),
         "roster_pct_change": _round(player.percent_change),
         "started_pct": _round(player.percent_started),
@@ -323,11 +326,19 @@ def build_view(
         return row
 
     matchup = None
+    moves = None
     if me is not None and opp_id is not None and snap.team(opp_id):
         my_side, opp_side = sides_for(ctx, me.id)
         mine: SideProjection = project_side(ctx, me, my_side)
         theirs = project_side(ctx, snap.team(opp_id), opp_side)  # type: ignore[arg-type]
         matchup = analyze_matchup(ctx, mine, theirs)
+        moves = simulate_moves(
+            ctx,
+            mine,
+            theirs,
+            [r["player_id"] for r in fa_ranked if r["games_remaining"] > 0],
+            _acquisitions(ctx, me)["remaining"],
+        )
 
     teams = []
     for team in snap.teams:
@@ -419,6 +430,8 @@ def build_view(
         "my_c_count": my_c,
         "teams": teams,
         "matchup": matchup,
+        "moves": moves,
+        "season_standings": _season_standings(ctx),
         "acquisitions": _acquisitions(ctx, me) if me else None,
         "waiver_order": [
             {"rank": t.waiver_rank, "team": t.name, "is_me": t.id == snap.my_team_id}
@@ -462,6 +475,37 @@ def build_view(
         "changes": changes,
         "changes_week": compare(ctx, week_ago, ownership_step=10.0),
     }
+
+
+def _season_standings(ctx: Context) -> list[dict] | None:
+    """Each team's actual season-to-date category totals from ESPN, ranked."""
+    snap = ctx.snap
+    teams = [t for t in snap.teams if t.season_stats]
+    if not teams:
+        return None
+    cats = [c for c in snap.league.categories if any(c in t.season_stats for t in teams)]
+    ranks: dict[int, dict[str, int]] = {t.id: {} for t in teams}
+    for cat in cats:
+        scored = {t.id: t.season_stats[cat] for t in teams if cat in t.season_stats}
+        for team_id, value in scored.items():
+            better = sum(
+                1 for v in scored.values() if (v < value if cat in REVERSE_CATS else v > value)
+            )
+            ranks[team_id][cat] = better + 1
+    opp_id = ctx.opponent_id(snap.my_team_id)
+    rows = [
+        {
+            "team": t.name,
+            "is_me": t.id == snap.my_team_id,
+            "is_opp": t.id == opp_id,
+            "record": f"{t.wins}-{t.losses}-{t.ties}",
+            "values": {c: t.season_stats.get(c) for c in cats},
+            "ranks": ranks[t.id],
+            "avg_rank": round(sum(ranks[t.id].values()) / max(len(ranks[t.id]), 1), 1),
+        }
+        for t in teams
+    ]
+    return sorted(rows, key=lambda r: r["avg_rank"])
 
 
 def _lineup_text(slots: dict[int, int]) -> str:

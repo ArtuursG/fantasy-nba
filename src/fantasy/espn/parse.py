@@ -387,6 +387,7 @@ def parse_teams(raw: dict[str, Any], players: dict[int, Player], season: int) ->
             matchup_acquisitions={
                 int(k): int(v) for k, v in (counter.get("matchupAcquisitionTotals") or {}).items()
             },
+            season_stats=_season_stats(data.get("valuesByStat") or {}),
         )
         for entry in (data.get("roster") or {}).get("entries") or []:
             wrapper = dict(entry.get("playerPoolEntry") or {})
@@ -408,6 +409,17 @@ def parse_teams(raw: dict[str, Any], players: dict[int, Player], season: int) ->
             )
         teams.append(team)
     return sorted(teams, key=lambda t: t.id)
+
+
+def _season_stats(values: dict[str, Any]) -> dict[str, float]:
+    """A team's season-to-date totals (ESPN's valuesByStat), by stat name."""
+    stats = {}
+    for stat_id, value in values.items():
+        name = STAT_NAMES.get(str(stat_id))
+        if name and value is not None:
+            number = _num(value)
+            stats[name] = number / 100 if name in PERCENT_STATS and number > 1 else number
+    return stats
 
 
 def _matchup_side(data: dict[str, Any]) -> MatchupSide:

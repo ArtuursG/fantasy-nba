@@ -18,9 +18,10 @@ uv run fantasy serve
 
 This opens the dashboard at http://localhost:8765. Press **Refresh** (it reads
 the league from ESPN and saves today's snapshot), then **COPY DAILY FANTASY
-REPORT**, and paste the report into ChatGPT. **Compact** leaves out the player
-rankings, the other teams' rosters and free agents 16-50 when a shorter paste
-is wanted (about 45k instead of 100k characters).
+REPORT**, and paste the report into ChatGPT. The full report is long (about
+120k characters); **Download .md** saves it as a file to attach in ChatGPT
+instead of pasting, and **Compact** leaves out the player rankings, the other
+teams' rosters and free agents 16-50 (about 60k characters).
 
 The dashboard also has a **Player rankings** table: every rostered player and
 free agent with per-game stats and a value for each category, for the full
@@ -101,19 +102,21 @@ On macOS or Linux, a cron line does the same:
 Same sections in the same order every day:
 
 1. **Header and league rules**: date, league, team, snapshot times, categories, lineup slots, C limit, waiver and acquisition rules.
-2. **My roster**: a table, then per player: positions and slot, health and injury note with expected return, ESPN Player Rater ranks, roster %, season / last 7 / last 15 days per-game lines, last 5 games, minutes and starts in the last 5, a usage proxy, role and minutes trend, games this matchup (scheduled, left, usable) and back-to-backs.
+2. **My roster**: a table, then per player: positions and slot, health and injury note with expected return, ESPN Player Rater ranks, roster %, season / last 7 / last 15 days per-game lines, value and per-category values, advanced stats (TS%, eFG%, 3P% and 3PA, FTA/FGA, AST/TO, OREB/DREB, stocks, double-double rate, share of team games played), per-36 rates, game-to-game consistency (average, spread, floor and ceiling of single-game value), last 5 games, minutes and starts in the last 5, a usage proxy, role and minutes trend, games this matchup (scheduled, left, usable) and back-to-backs.
 3. **Injury / role changes**: minutes up or down, new or lost starting jobs, returns from injury (with minutes since return), injured teammates opening minutes, add-rate surges, likely rookies earning a role.
-4. **Current matchup**: category score now, projected final with win odds, likely wins, likely losses and swing categories.
+4. **Current matchup**: category score now, projected final with win odds, likely wins, likely losses and swing categories, expected categories won, the chance of winning the matchup, and what it takes in each category short of a likely win (extra output to draw even and to reach 70%, per remaining game).
 5. **League transactions**: the last 7 days, marked `[NEW]` since the last report, with waiver results.
 6. **Top free agents**: 50, ranked by interest rather than ESPN rank (15 in detail, 35 in a table), plus streaming targets.
-7. **Opponent roster changes** and the opponent's full roster.
-8. **Schedule**: every remaining day with NBA game count, low and high volume days, who plays, open starting slots, benched players, and each player's remaining games.
-9. **Acquisitions** used and remaining, and IR status.
-10. **Waiver order**.
-11. **Important changes since yesterday**: the headlines, my team first.
-12. **Category strength**: every team's rank 1-10 in each category.
-13. **Player rankings**: the top 13 rounds by value, with owner, per-game stats, usage proxy, each category's value and the last-15-days value.
-14. **All team rosters** (with each player's value and rank), **changes vs 7 days ago**, **most rostered free agents** and **data notes**.
+7. **Add/drop simulator**: the 15 most interesting free agents, each swapped in for the weakest player it helps most to drop, with the change in usable games, expected categories, matchup win chance and each category's odds.
+8. **Opponent roster changes** and the opponent's full roster.
+9. **Schedule**: every remaining day with NBA game count, low and high volume days, who plays, open starting slots, benched players, and each player's remaining games.
+10. **Acquisitions** used and remaining, and IR status.
+11. **Waiver order**.
+12. **Important changes since yesterday**: the headlines, my team first.
+13. **Category strength**: every team's rank 1-10 in each category.
+14. **Season category totals**: every team's actual season-to-date totals and rank in each category.
+15. **Player rankings**: the top 13 rounds by value, with owner, per-game stats, usage proxy, each category's value and the last-15-days value.
+16. **All team rosters** (with each player's value and rank), **changes vs 7 days ago**, **most rostered free agents** and **data notes**.
 
 ## How the numbers are worked out
 
@@ -123,6 +126,8 @@ Same sections in the same order every day:
 - **Category strength**: per-game projection totals of each roster's healthy non-IR players, ranked across the league (TO ranked low-is-best).
 - **Role trend**: average minutes in the last 5 games against the 10 before (or the season average); 4 or more minutes is UP or DOWN. A starter is someone who started 3 of the last 5. A return from injury is 3 or more missed team games followed by 1-3 games back.
 - **Player value**: for each category, a per-game z-score against the rostered players (percentages weighted by attempts, so a high-volume shooter moves FG% more; turnovers count against). A player's value is the average over the categories, about +1 for a first-round player and 0 at the edge of what's rostered. With punt categories set, value averages only the others ("LeagV" keeps all of them), and lineups and free agents are ranked by that value; the matchup section still covers every category.
+- **Matchup win chance**: the category odds combined, treating categories as independent, into the odds of each category record; the matchup is won with more categories than the opponent. Categories aren't fully independent (one big night lifts several), so it's a guide, not a promise.
+- **Add/drop simulator**: the rest of the matchup re-projected with the pickup in place of the drop, from the day he can play (after the waiver period for a waived player); what was already played is unchanged.
 - **Free-agent interest**: a 9-cat z-score of the projection line, plus recent form, minutes trend, a new starting job, an injured teammate at his position, a return from injury, the add rate and usable games, minus a penalty while he's out.
 
 ## History

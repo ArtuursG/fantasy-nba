@@ -143,6 +143,9 @@ STAT_IDS = {
     "ftm": "15",
     "fta": "16",
     "tpm": "17",
+    "tpa": "18",
+    "oreb": "4",
+    "dreb": "5",
     "min": "40",
     "gs": "41",
     "gp": "42",
@@ -213,6 +216,10 @@ class DemoWorld:
         self.season = default_season(today)
         self.today_sp = self.sp_of(today)
         self.games = self._schedule()
+        self._games_by_sp: dict[int, list[DemoGame]] = {}
+        for game in self.games:
+            self._games_by_sp.setdefault(game.sp, []).append(game)
+        self._stats_cache: dict[tuple[int, int], dict[str, float] | None] = {}
         self.players: dict[int, DemoPlayer] = {}
         self._games_cache: dict[tuple[int, datetime], list[tuple[DemoGame, dict]]] = {}
         self.rosters: dict[int, list[int]] = {}
@@ -421,6 +428,12 @@ class DemoWorld:
         return rosters, free
 
     def _game_stats(self, player: DemoPlayer, game: DemoGame) -> dict[str, float] | None:
+        key = (player.id, game.id)
+        if key not in self._stats_cache:
+            self._stats_cache[key] = self._draw_game(player, game)
+        return self._stats_cache[key]
+
+    def _draw_game(self, player: DemoPlayer, game: DemoGame) -> dict[str, float] | None:
         if player.status(game.sp) in ("OUT", "SUSPENSION"):
             return None
         rng = random.Random(player.id * 1009 + game.sp)
@@ -450,6 +463,10 @@ class DemoWorld:
         }
         for stat in ("reb", "ast", "stl", "blk", "to"):
             line[stat] = draw(arch["rates"][stat] * scale)
+        line["tpa"] = tpm + draw(arch["rates"]["tpm"] * scale * 1.7)
+        offensive_share = 0.3 if player.arch in ("B", "C") else 0.2
+        line["oreb"] = sum(1 for _ in range(line["reb"]) if rng.random() < offensive_share)
+        line["dreb"] = line["reb"] - line["oreb"]
         return line
 
     def _player_games(self, player: DemoPlayer, as_of: datetime) -> list[tuple[DemoGame, dict]]:
@@ -488,6 +505,9 @@ class DemoWorld:
         avg["fga"], avg["fta"] = arch["fga"] * scale, arch["fta"] * scale
         avg["fgm"], avg["ftm"] = avg["fga"] * arch["fg"], avg["fta"] * arch["ft"]
         avg["tpm"] = min(avg["tpm"], avg["fgm"])
+        avg["tpa"] = avg["tpm"] * 2.7
+        avg["oreb"] = avg["reb"] * (0.3 if player.arch in ("B", "C") else 0.2)
+        avg["dreb"] = avg["reb"] - avg["oreb"]
         avg["pts"] = 2 * avg["fgm"] + avg["tpm"] + avg["ftm"]
         avg["min"] = player.base_min
         averages = {STAT_IDS[k]: v for k, v in avg.items()}
@@ -636,11 +656,15 @@ class DemoWorld:
         return {p: slots.get(p, 12) for p in ids}
 
     def _matchup_totals(self, ids: list[int], as_of: datetime, period: int) -> dict[str, float]:
-        totals = dict.fromkeys(STAT_IDS, 0.0)
         first_sp = (period - 1) * 7 + 1
-        for sp in range(first_sp, first_sp + 7):
+        return self._totals(ids, as_of, range(first_sp, first_sp + 7))
+
+    def _totals(self, ids: list[int], as_of: datetime, sps: range) -> dict[str, float]:
+        """Stats of each day's ten busiest players with a game, summed."""
+        totals = dict.fromkeys(STAT_IDS, 0.0)
+        for sp in sps:
             lines = []
-            for game in (g for g in self.games if g.sp == sp):
+            for game in self._games_by_sp.get(sp, []):
                 if game.start + timedelta(hours=3) > as_of:
                     continue
                 for player_id in ids:
@@ -653,6 +677,16 @@ class DemoWorld:
                 for key, value in line.items():
                     totals[key] += value
         return totals
+
+    def _values_by_stat(self, ids: list[int], as_of: datetime, sp: int) -> dict[str, float]:
+        totals = self._totals(ids, as_of, range(1, sp + 1))
+        values = {
+            STAT_IDS[k]: totals[k]
+            for k in ("pts", "blk", "stl", "ast", "reb", "to", "fgm", "fga", "ftm", "fta", "tpm")
+        }
+        values["19"] = totals["fgm"] / totals["fga"] if totals["fga"] else 0.0
+        values["20"] = totals["ftm"] / totals["fta"] if totals["fta"] else 0.0
+        return values
 
     def _score_by_stat(self, mine: dict, theirs: dict) -> tuple[dict, list[int]]:
         def value(totals: dict, stat: str) -> float:
@@ -722,6 +756,7 @@ class DemoWorld:
                         "matchupAcquisitionTotals": {str(period): len(in_period)},
                     },
                     "roster": {"entries": entries},
+                    "valuesByStat": self._values_by_stat(ids, as_of, sp),
                 }
             )
 

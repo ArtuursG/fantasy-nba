@@ -180,9 +180,12 @@ def plan_days(
     now: datetime,
     *,
     remaining: bool = True,
+    available_from: dict[int, date] | None = None,
 ) -> list[DayPlan]:
     """Best lineup per day: remaining games (tip-off after `now`) or, with
-    remaining=False, games already played."""
+    remaining=False, games already played. `available_from` holds players
+    back until a date (a waiver claim that hasn't cleared yet)."""
+    available_from = available_from or {}
     slots = starting_slots(snapshot.league.lineup_slots)
     roster = [
         snapshot.players[s.player_id]
@@ -197,7 +200,11 @@ def plan_days(
         if day is None or not games:
             continue
         teams_playing = {g.home_id for g in games} | {g.away_id for g in games}
-        playing = [p for p in roster if p.pro_team_id in teams_playing]
+        playing = [
+            p
+            for p in roster
+            if p.pro_team_id in teams_playing and day >= available_from.get(p.id, day)
+        ]
         available = [p for p in playing if is_available(p, day)]
         lineup = Lineup(slots)
         started, benched = [], []

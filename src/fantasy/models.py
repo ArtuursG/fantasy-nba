@@ -23,6 +23,9 @@ COUNTING_FIELDS = (
     "ftm",
     "fta",
     "tpm",
+    "tpa",
+    "oreb",
+    "dreb",
     "reb",
     "ast",
     "stl",
@@ -44,6 +47,9 @@ class StatLine:
     ftm: float = 0.0
     fta: float = 0.0
     tpm: float = 0.0
+    tpa: float = 0.0
+    oreb: float = 0.0
+    dreb: float = 0.0
     reb: float = 0.0
     ast: float = 0.0
     stl: float = 0.0
@@ -123,6 +129,7 @@ class Team:
     acquisitions_total: int | None = None
     matchup_acquisitions: dict[int, int] = field(default_factory=dict)
     roster: list[RosterSpot] = field(default_factory=list)
+    season_stats: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass

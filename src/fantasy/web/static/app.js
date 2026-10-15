@@ -102,6 +102,8 @@ function renderMatchup(v) {
     h("div", { class: "row" },
       h("div", {}, h("div", { class: "muted" }, mu.me.name + " vs " + mu.opp.name), h("div", { class: "big" }, `${score.wins}-${score.losses}-${score.ties}`)),
       h("div", {}, h("div", { class: "muted" }, "Projected"), h("div", { class: "big" }, mu.projected_record)),
+      h("div", {}, h("div", { class: "muted" }, "Matchup win chance"), h("div", { class: "big" }, Math.round(mu.outlook.p_win_matchup * 100) + "%")),
+      h("div", {}, h("div", { class: "muted" }, "Expected categories"), h("div", { class: "big" }, `${mu.outlook.expected_wins.toFixed(1)} / ${mu.outlook.categories}`)),
       h("div", {}, h("div", { class: "muted" }, "Games left (usable)"), h("div", {}, `Me ${g.me.scheduled_remaining} (${g.me.usable_remaining}) · Opp ${g.opp.scheduled_remaining} (${g.opp.usable_remaining})`))
     ),
     h("div", { class: "chips" },
@@ -110,7 +112,96 @@ function renderMatchup(v) {
       mu.likely_losses.map((c) => h("span", { class: "chip bad" }, "Loss: " + c))
     ),
     table(["Cat", "Me now", "Opp now", "Me proj", "Opp proj", "Win %", "Call"], rows),
+    renderTargets(mu),
     mu.attempts_estimated ? h("p", { class: "muted" }, "FGA/FTA so far are estimated from lineups (ESPN's matchup data has only the percentages).") : null
+  );
+}
+
+function renderTargets(mu) {
+  if (!mu.targets || !mu.targets.length) return null;
+  const rows = mu.targets.map((t) => {
+    const isPct = t.cat.endsWith("%");
+    const f = (x) => (isPct ? Number(x).toFixed(3) : Number(x).toFixed(1));
+    const fewer = t.cat === "TO" ? " fewer" : "";
+    return {
+      cells: [
+        t.cat,
+        Math.round(t.p_win * 100) + "%",
+        signed(t.edge, isPct ? 3 : 1),
+        t.to_even ? f(t.to_even) + fewer : "0",
+        f(t.to_likely) + fewer + (isPct && t.makes_to_likely !== null ? ` (~${Math.round(t.makes_to_likely)} makes)` : ""),
+        Number(t.per_game).toFixed(2) + (isPct ? " makes" : ""),
+      ],
+    };
+  });
+  return [h("h3", {}, "What it takes"), table(["Cat", "Win %", "Edge", "To draw even", "To 70%", "Per game left"], rows)];
+}
+
+function renderSimulator(v) {
+  const sim = v.moves;
+  if (!sim || !sim.moves.length) return null;
+  const rows = sim.moves.map((m) => ({
+    cells: [
+      m.add, m.add_team, m.drop, m.waiver_until || "now",
+      { node: (m.usable_change > 0 ? "+" : "") + m.usable_change, cls: m.usable_change > 0 ? "good" : m.usable_change < 0 ? "bad" : "" },
+      { node: signed(m.expected_wins_change, 2), cls: m.expected_wins_change > 0.05 ? "good" : m.expected_wins_change < -0.05 ? "bad" : "" },
+      `${Math.round(m.p_win_after * 100)}% (${m.p_win_change >= 0 ? "+" : ""}${Math.round(m.p_win_change * 100)})`,
+      m.category_changes.slice(0, 3).map((c) => `${c.cat} ${c.change >= 0 ? "+" : ""}${Math.round(c.change * 100)}%`).join(", ") || "-",
+      valueCell(m.value_change),
+    ],
+  }));
+  return card(
+    "Add/drop simulator",
+    true,
+    h("p", { class: "muted" }, `Now: ${sim.base.expected_wins.toFixed(1)} expected categories, ${Math.round(sim.base.p_win_matchup * 100)}% matchup win chance. Each free agent replaces the weakest player he helps most to drop (${sim.drop_candidates.join(", ")}). Acquisitions left: ${sim.acquisitions_left ?? "?"}.`),
+    sim.acquisitions_left === 0 ? h("p", { class: "bad" }, "No acquisitions left this matchup.") : null,
+    table(["Add", "Team", "Drop", "Playable", "Usable games", "Exp. cats", "Matchup win %", "Biggest changes", "Season value"], rows, { textCols: [0, 1, 2, 3, 7] })
+  );
+}
+
+function renderAdvanced(v) {
+  const t = v.my_team;
+  if (!t) return null;
+  const rows = t.roster.filter((r) => r.advanced).map((r) => {
+    const a = r.advanced;
+    const c = a.consistency || {};
+    return {
+      cells: [
+        r.name, pct(a.ts_pct), pct(a.efg_pct), pct(a.tp_pct), num(a.tpa), num(a.ast_to, 2), num(a.oreb), num(a.dreb),
+        num(a.stocks), a.dd_rate === null ? "-" : Math.round(a.dd_rate * 100) + "%",
+        a.per36 ? num(a.per36.pts) : "-", num(r.usage_proxy),
+        valueCell(c.mean), c.sd === undefined ? "-" : num(c.sd, 2), valueCell(c.floor), valueCell(c.ceiling),
+        a.team_games ? `${a.games_played}/${a.team_games}` : "-",
+      ],
+    };
+  });
+  return card(
+    "Advanced stats: my roster",
+    true,
+    table(["Player", "TS%", "eFG%", "3P%", "3PA", "AST/TO", "OREB", "DREB", "Stocks", "DD%", "PTS/36", "USG~", "Game value", "Spread", "Floor", "Ceiling", "Played"], rows, { textCols: [0] }),
+    h("p", { class: "muted" }, "Game value: each of the last 15 games scored like the rankings. Spread is how much it swings; floor and ceiling are the 20th and 80th percentile. Played: games played of the team's games.")
+  );
+}
+
+function renderSeason(v) {
+  const rows = v.season_standings;
+  if (!rows) return null;
+  const cats = Object.keys(rows[0].values);
+  return card(
+    "Season category totals (actual, rank 1 = best)",
+    true,
+    table(
+      ["Team", "Record", ...cats, "Avg"],
+      rows.map((r) => ({
+        cls: r.is_me ? "mine" : null,
+        cells: [
+          r.team + (r.is_me ? " (me)" : r.is_opp ? " (opp)" : ""), r.record,
+          ...cats.map((c) => ({ node: r.ranks[c] ?? "-", cls: r.ranks[c] ? "rank-" + r.ranks[c] : "", title: c.endsWith("%") ? pct(r.values[c]) : num(r.values[c], 0) })),
+          num(r.avg_rank),
+        ],
+      })),
+      { textCols: [0, 1] }
+    )
   );
 }
 
@@ -423,12 +514,14 @@ function render(view, demo) {
       renderSettings(!(settingsData && settingsData.league_id))
     );
     $("copy").disabled = true;
+    $("download").disabled = true;
     $("preview-card").hidden = true;
     return;
   }
   const m = view.meta;
   $("subtitle").textContent = `${m.league} · ${m.my_team || "team not found"} · snapshot ${m.fetched_at}` + (m.compared_with ? ` · vs ${m.compared_with}` : "");
-  app.append(
+  // Some panels are absent (no matchup, no season totals yet): skip them.
+  const panels = [
     renderMatchup(view),
     renderChanges(view),
     renderAcquisitions(view),
@@ -436,13 +529,17 @@ function render(view, demo) {
     renderMyRoster(view),
     renderSchedule(view),
     renderFreeAgents(view),
+    renderSimulator(view),
+    renderAdvanced(view),
     renderTransactions(view),
     renderPopular(view),
     renderStrength(view),
+    renderSeason(view),
     renderRankings(view),
     renderTeams(view),
-    renderSettings(false)
-  );
+    renderSettings(false),
+  ];
+  app.append(...panels.filter(Boolean));
   if (m.warnings && m.warnings.length) setStatus("Warnings: " + m.warnings.join(" | "));
   loadReport();
 }
@@ -455,6 +552,7 @@ async function loadReport() {
   $("report-text").value = reportText;
   $("preview-card").hidden = false;
   $("copy").disabled = false;
+  $("download").disabled = false;
 }
 
 async function loadState() {
@@ -500,5 +598,13 @@ async function copyReport() {
 
 $("refresh").addEventListener("click", refresh);
 $("copy").addEventListener("click", copyReport);
+$("download").addEventListener("click", () => {
+  if (!reportText) return;
+  const date = (reportText.match(/^Date: (\S+)/m) || [])[1] || "report";
+  const link = h("a", { href: URL.createObjectURL(new Blob([reportText], { type: "text/markdown" })), download: `fantasy-report-${date}.md` });
+  document.body.append(link);
+  link.click();
+  link.remove();
+});
 $("compact").addEventListener("change", loadReport);
 loadState().catch((err) => setStatus("Could not load the dashboard: " + err, "error"));

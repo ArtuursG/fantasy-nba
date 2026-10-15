@@ -13,6 +13,8 @@ STAT_FIELDS = {
     "1": "blk",
     "2": "stl",
     "3": "ast",
+    "4": "oreb",
+    "5": "dreb",
     "6": "reb",
     "11": "to",
     "13": "fgm",
@@ -20,6 +22,7 @@ STAT_FIELDS = {
     "15": "ftm",
     "16": "fta",
     "17": "tpm",
+    "18": "tpa",
     "40": "min",
 }
 STAT_GS = "41"

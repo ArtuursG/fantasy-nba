@@ -46,7 +46,8 @@ def pct(value: Any) -> str:
 
 
 def signed(value: Any, digits: int = 1) -> str:
-    return "-" if value is None else f"{value:+.{digits}f}"
+    # Adding 0.0 turns a rounded -0.0 into 0.0, so it prints as +0.00.
+    return "-" if value is None else f"{round(value, digits) + 0.0:+.{digits}f}"
 
 
 def table(headers: list[str], rows: Iterable[list[Any]]) -> list[str]:
@@ -142,6 +143,48 @@ def cat_values_text(values: dict[str, float], punt: list[str]) -> str:
     )
 
 
+def advanced_lines(adv: dict | None, short: bool = False) -> list[str]:
+    if not adv:
+        return []
+    shooting = (
+        f"TS% {pct(adv['ts_pct'])} | eFG% {pct(adv['efg_pct'])} | 3P% {pct(adv['tp_pct'])} on "
+        f"{num(adv['tpa'])} 3PA"
+    )
+    cons = adv.get("consistency")
+    consistency = (
+        f"Game-to-game value (last {cons['games']}): average {signed(cons['mean'], 2)}, "
+        f"spread {cons['sd']:.2f}, floor {signed(cons['floor'], 2)}, "
+        f"ceiling {signed(cons['ceiling'], 2)}, bad games {cons['bad_games'] * 100:.0f}%"
+        if cons
+        else None
+    )
+    per36 = adv.get("per36")
+    per36_text = (
+        "Per 36: " + ", ".join(f"{v} {k.upper().replace('TPM', '3PM')}" for k, v in per36.items())
+        if per36
+        else None
+    )
+    if short:
+        return [
+            x for x in (f"Advanced: {shooting} | AST/TO {num(adv['ast_to'], 2)}", consistency) if x
+        ]
+    played = (
+        f" | played {adv['games_played']} of {adv['team_games']} team games"
+        if adv.get("team_games")
+        else ""
+    )
+    lines = [
+        f"Advanced ({adv['source']}): {shooting} | FTA/FGA {num(adv['ft_rate'], 2)} | AST/TO "
+        f"{num(adv['ast_to'], 2)} | OREB {num(adv['oreb'])} / DREB {num(adv['dreb'])} | stocks "
+        f"{num(adv['stocks'])} | double-doubles "
+        + (f"{adv['dd_rate'] * 100:.0f}%" if adv["dd_rate"] is not None else "-")
+        + f" of recent games{played}",
+        per36_text,
+        consistency,
+    ]
+    return [x for x in lines if x]
+
+
 def health_text(row: dict) -> str:
     text = row["health"]
     if row.get("expected_return") and row["injury_status"] not in ("ACTIVE", "NORMAL"):
@@ -170,12 +213,14 @@ class Report:
         self.matchup()
         self.transactions()
         self.free_agents()
+        self.simulator()
         self.opponent_changes()
         self.schedule()
         self.acquisitions()
         self.waiver_order()
         self.important_changes()
         self.strength()
+        self.season_totals()
         if not self.compact:
             self.rankings()
             self.all_rosters()
@@ -312,6 +357,8 @@ class Report:
             f"- Value: {value_text(r, punt)} | per category: "
             f"{cat_values_text(r['cat_values'], punt)}"
         )
+        for line in advanced_lines(r.get("advanced")):
+            self.add(f"- {line}")
         if r["last5_games"]:
             self.add("- Last 5 games: " + "; ".join(game_text(g) for g in r["last5_games"]))
         usage = f"usage proxy {num(r['usage_proxy'])}"
@@ -404,6 +451,50 @@ class Report:
             f"{games['me']['usable_remaining']} usable; opponent "
             f"{games['opp']['scheduled_remaining']} / {games['opp']['usable_remaining']}",
         )
+        outlook = mu["outlook"]
+        at_least = {int(k): v for k, v in outlook["p_at_least"].items()}
+        n = outlook["categories"]
+        half = n // 2 + 1
+        self.add(
+            "",
+            f"Win chances: expected categories won {outlook['expected_wins']:.1f} of {n}; chance "
+            f"to win the matchup (more categories than the opponent): "
+            f"{outlook['p_win_matchup'] * 100:.0f}%",
+            "Category wins: "
+            + ", ".join(
+                f"at least {k}: {at_least[k] * 100:.0f}%"
+                for k in range(max(0, half - 1), min(n, half + 2) + 1)
+            ),
+        )
+        if mu["targets"]:
+            punt = self.meta["punt"]
+            self.add("", "What it takes (categories short of a likely win):", "")
+            rows = []
+            for t in mu["targets"]:
+                pct_cat = t["cat"].endswith("%")
+                fmt = (lambda v: f"{v:.3f}") if pct_cat else (lambda v: f"{v:.1f}")
+                unit = " fewer" if t["cat"] == "TO" else ""
+                likely = fmt(t["to_likely"]) + unit
+                per_game = f"{t['per_game']:.2f}"
+                if pct_cat and t["makes_to_likely"] is not None:
+                    likely += f" (~{t['makes_to_likely']:.0f} more makes)"
+                    per_game += " makes"
+                rows.append(
+                    [
+                        t["cat"] + (" (punted)" if t["cat"] in punt else ""),
+                        f"{t['p_win'] * 100:.0f}%",
+                        signed(t["edge"], 3 if pct_cat else 1),
+                        fmt(t["to_even"]) + (unit if t["to_even"] else ""),
+                        likely,
+                        per_game,
+                    ]
+                )
+            self.add(
+                *table(
+                    ["Cat", "Win %", "Projected edge", "To draw even", "To 70%", "Per game left"],
+                    rows,
+                )
+            )
         if mu["attempts_estimated"]:
             self.add(
                 "(Current FGA/FTA are not in ESPN's matchup data; they are estimated from "
@@ -472,6 +563,7 @@ class Report:
                 f"   Usable games this matchup: {r['usable_remaining']} of {r['games_remaining']}"
                 + (f" ({', '.join(r['usable_days'])})" if r["usable_days"] else ""),
                 f"   Value: {value_text(r, self.meta['punt'])}",
+                *(f"   {line}" for line in advanced_lines(r.get("advanced"), short=True)),
                 f"   Why: {'; '.join(r['reasons']) or 'value'}",
             )
         rest = fas[DETAILED_FREE_AGENTS:]
@@ -555,6 +647,95 @@ class Report:
                     ),
                 )
             )
+
+    def simulator(self) -> None:
+        self.section("ADD/DROP SIMULATOR")
+        sim = self.view.get("moves")
+        if not sim or not sim["moves"]:
+            self.add("No current matchup to simulate.")
+            return
+        base = sim["base"]
+        acq = sim["acquisitions_left"]
+        self.add(
+            f"Now: expected categories won {base['expected_wins']:.1f}, matchup win chance "
+            f"{base['p_win_matchup'] * 100:.0f}%. Each row adds the free agent in place of the "
+            f"weakest player it helps most to drop ({', '.join(sim['drop_candidates'])}), from the "
+            "day he can play (waiver players once they clear), and re-projects the rest of the "
+            f"matchup. Acquisitions left this matchup: {acq if acq is not None else '?'}.",
+            "",
+        )
+        if acq == 0:
+            self.add("No acquisitions left: these moves only count from the next matchup.", "")
+        rows = []
+        for m in sim["moves"]:
+            changes = ", ".join(
+                f"{c['cat']} {c['change'] * 100:+.0f}%" for c in m["category_changes"][:3]
+            )
+            rows.append(
+                [
+                    m["add"],
+                    m["add_team"],
+                    m["drop"],
+                    m["waiver_until"] or "now",
+                    f"{m['usable_change']:+d}",
+                    f"{m['expected_wins_change']:+.2f}",
+                    f"{m['p_win_after'] * 100:.0f}% ({m['p_win_change'] * 100:+.0f})",
+                    changes or "-",
+                    signed(m["value_change"], 2),
+                ]
+            )
+        self.add(
+            *table(
+                [
+                    "Add",
+                    "Team",
+                    "Drop",
+                    "Playable from",
+                    "Usable games",
+                    "Exp. cats",
+                    "Matchup win %",
+                    "Biggest category changes",
+                    "Season value",
+                ],
+                rows,
+            )
+        )
+
+    def season_totals(self) -> None:
+        rows = self.view.get("season_standings")
+        if not rows:
+            return
+        self.section("SEASON CATEGORY TOTALS (actual, rank 1 = best)")
+        cats = list(rows[0]["values"])
+        self.add("Season-to-date category totals from ESPN; TO ranked low-is-best.", "")
+        self.add(
+            *table(
+                ["Team", "Record", *cats, "Avg rank"],
+                (
+                    [
+                        r["team"] + (" (me)" if r["is_me"] else " (opp)" if r["is_opp"] else ""),
+                        r["record"],
+                        *(r["ranks"].get(c, "-") for c in cats),
+                        f"{r['avg_rank']:.1f}",
+                    ]
+                    for r in rows
+                ),
+            )
+        )
+        self.add("", "Totals:", "")
+        self.add(
+            *table(
+                ["Team", *cats],
+                (
+                    [r["team"]]
+                    + [
+                        pct(r["values"].get(c)) if c.endswith("%") else num(r["values"].get(c), 0)
+                        for c in cats
+                    ]
+                    for r in rows
+                ),
+            )
+        )
 
     def opponent_changes(self) -> None:
         self.section("OPPONENT ROSTER CHANGES")
@@ -953,6 +1134,16 @@ class Report:
             "weighted by attempts and turnovers counted against; about +1 is a first-round "
             "player, 0 the edge of rosterable. Rank is by value in the PLAYER RANKINGS range; "
             "L15 Value uses the last 15 days.",
+            "- Matchup win chance: categories treated as independent (they're not quite: a big "
+            "night lifts several at once), so read it as a guide. Category wins are counted, so "
+            "every expected category matters even when the matchup is decided.",
+            "- What it takes: extra output needed over the remaining days to draw even and to "
+            "reach a 70% chance, with the same per remaining usable game.",
+            "- Add/drop simulator: the rest of the matchup re-projected with the pickup in place "
+            "of the drop; season value is the difference in per-game value.",
+            "- Game-to-game value: each recent game scored like the rankings; spread is the "
+            "standard deviation, floor and ceiling the 20th and 80th percentile, bad games "
+            "below -0.5.",
         )
         for warning in self.meta["warnings"]:
             self.add(f"- Warning: {warning}")
