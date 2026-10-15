@@ -280,6 +280,19 @@ function renderTrade(v) {
   );
 }
 
+function renderAccuracy(v) {
+  const a = v.accuracy;
+  if (!a) return card("Forecast accuracy", false, h("p", { class: "muted" }, "Fills in after the first finished week of daily refreshes."));
+  const b = (x) => (x === null || x === undefined ? "-" : x.toFixed(3));
+  return card(
+    "Forecast accuracy",
+    false,
+    h("p", {}, `${a.forecasts} category forecasts over ${a.matchups} finished matchup(s). Brier ${b(a.brier)} (0 perfect, 0.25 coin flip); first forecast of each week ${b(a.brier_first)}.`),
+    a.likely_correct !== null ? h("p", {}, `Likely calls that came true: ${Math.round(a.likely_correct * 100)}% of ${a.likely_calls}.`) : null,
+    a.calibration.length ? table(["Confidence", "Forecasts", "Expected", "Came true"], a.calibration.map((c) => ({ cells: [c.range, c.forecasts, Math.round(c.expected * 100) + "%", Math.round(c.actual * 100) + "%"] }))) : null
+  );
+}
+
 function renderAdvanced(v) {
   const t = v.my_team;
   if (!t) return null;
@@ -692,6 +705,7 @@ function render(view, demo) {
     renderAdvanced(view),
     renderTransactions(view),
     renderPopular(view),
+    renderAccuracy(view),
     renderStrength(view),
     renderSeason(view),
     renderTrade(view),

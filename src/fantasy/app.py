@@ -9,6 +9,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from fantasy.analysis.accuracy import forecast_accuracy
 from fantasy.analysis.context import Context
 from fantasy.analysis.trade import TradeError, evaluate_trade
 from fantasy.analysis.view import build_view
@@ -41,9 +42,21 @@ class FantasyApp:
     def refresh(self, save_raw: Path | None = None, log: Callable[[str], None] = print) -> Snapshot:
         with self._lock:
             snapshot = self._refresh_demo(log) if self.demo else self._refresh_live(save_raw, log)
-            self.store.save(snapshot, local_date(snapshot.fetched_at, self.config.tz))
+            self._save(snapshot)
             self._cache = None
             return snapshot
+
+    def _save(self, snapshot: Snapshot) -> None:
+        """Store a snapshot, the results of matchups it shows finished, and
+        this refresh's forecast for my matchup (for the accuracy log)."""
+        day = local_date(snapshot.fetched_at, self.config.tz)
+        self.store.save(snapshot, day)
+        self.store.record_results(snapshot)
+        matchup = build_view(snapshot, None, None, self.config.tz, punt=self.config.punt)["matchup"]
+        if matchup:
+            odds = {row["cat"]: row["p_win"] for row in matchup["projected"]}
+            odds["*"] = matchup["outlook"]["p_win_matchup"]
+            self.store.record_forecast(snapshot, matchup["period"], odds)
 
     def _refresh_live(self, save_raw: Path | None, log: Callable[[str], None]) -> Snapshot:
         config = self.config
@@ -79,7 +92,7 @@ class FantasyApp:
         self.store.clear()
         for days in (7, 1):
             earlier = parse_bundle(world.bundle(now - timedelta(days=days)), MY_TEAM, demo=True)
-            self.store.save(earlier, local_date(earlier.fetched_at, self.config.tz))
+            self._save(earlier)
         return parse_bundle(world.bundle(now), MY_TEAM, demo=True)
 
     def view(self) -> dict | None:
@@ -96,6 +109,9 @@ class FantasyApp:
             self.store.on_or_before(snapshot, day - timedelta(days=7)),
             self.config.tz,
             punt=self.config.punt,
+        )
+        view["accuracy"] = forecast_accuracy(
+            *self.store.forecast_history(snapshot.league.id, snapshot.league.season)
         )
         self._cache = (key, view)
         return view

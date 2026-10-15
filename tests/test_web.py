@@ -101,3 +101,9 @@ def test_trade_endpoint(server):
     assert response.status_code == 200 and response.json()["partner"] == partner["name"]
     bad = httpx.post(server + "/api/trade", json={"give": get, "get": give})
     assert bad.status_code == 400 and "own roster" in bad.json()["error"]
+
+
+def test_demo_refresh_fills_the_accuracy_log(server):
+    view = httpx.post(server + "/api/refresh", timeout=60).json()["view"]
+    assert view["accuracy"]["matchups"] == 1
+    assert view["accuracy"]["forecasts"] == 9

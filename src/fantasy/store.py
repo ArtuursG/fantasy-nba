@@ -23,6 +23,27 @@ CREATE TABLE IF NOT EXISTS snapshots (
     payload BLOB NOT NULL
 );
 CREATE INDEX IF NOT EXISTS snapshots_by_date ON snapshots (league_id, season, local_date);
+-- My matchup's forecast at each refresh: one row per category, and cat '*'
+-- for the chance of winning the matchup.
+CREATE TABLE IF NOT EXISTS forecasts (
+    fetched_at TEXT NOT NULL,
+    league_id INTEGER NOT NULL,
+    season INTEGER NOT NULL,
+    period INTEGER NOT NULL,
+    cat TEXT NOT NULL,
+    p_win REAL NOT NULL,
+    PRIMARY KEY (fetched_at, league_id, season, cat)
+);
+-- Final results of my finished matchups (WIN / LOSS / TIE), cat '*' for
+-- the matchup itself.
+CREATE TABLE IF NOT EXISTS results (
+    league_id INTEGER NOT NULL,
+    season INTEGER NOT NULL,
+    period INTEGER NOT NULL,
+    cat TEXT NOT NULL,
+    result TEXT NOT NULL,
+    PRIMARY KEY (league_id, season, period, cat)
+);
 """
 
 
@@ -88,7 +109,65 @@ class SnapshotStore:
 
     def clear(self) -> None:
         with self._connect() as db:
-            db.execute("DELETE FROM snapshots")
+            for table in ("snapshots", "forecasts", "results"):
+                db.execute(f"DELETE FROM {table}")
+
+    def record_forecast(self, snapshot: Snapshot, period: int, odds: dict[str, float]) -> None:
+        with self._connect() as db:
+            db.executemany(
+                "INSERT OR REPLACE INTO forecasts VALUES (?, ?, ?, ?, ?, ?)",
+                [
+                    (
+                        snapshot.fetched_at,
+                        snapshot.league.id,
+                        snapshot.league.season,
+                        period,
+                        cat,
+                        p,
+                    )
+                    for cat, p in odds.items()
+                ],
+            )
+
+    def record_results(self, snapshot: Snapshot) -> int:
+        """Store my finished matchups' category results found in a snapshot."""
+        rows = []
+        for matchup in snapshot.matchups:
+            if matchup.period >= snapshot.league.matchup_period or matchup.away is None:
+                continue
+            if snapshot.my_team_id == matchup.home.team_id:
+                side, won = matchup.home, {"HOME": "WIN", "AWAY": "LOSS"}
+            elif snapshot.my_team_id == matchup.away.team_id:
+                side, won = matchup.away, {"AWAY": "WIN", "HOME": "LOSS"}
+            else:
+                continue
+            if matchup.winner == "UNDECIDED" or not side.results:
+                continue
+            for cat, result in side.results.items():
+                rows.append((matchup.period, cat, result))
+            rows.append((matchup.period, "*", won.get(matchup.winner, "TIE")))
+        with self._connect() as db:
+            db.executemany(
+                "INSERT OR REPLACE INTO results VALUES (?, ?, ?, ?, ?)",
+                [(snapshot.league.id, snapshot.league.season, *row) for row in rows],
+            )
+        return len(rows)
+
+    def forecast_history(
+        self, league_id: int, season: int
+    ) -> tuple[list[tuple[str, int, str, float]], dict[tuple[int, str], str]]:
+        """(forecasts as (fetched_at, period, cat, p_win), results by (period, cat))."""
+        with self._connect() as db:
+            forecasts = db.execute(
+                "SELECT fetched_at, period, cat, p_win FROM forecasts "
+                "WHERE league_id = ? AND season = ? ORDER BY fetched_at",
+                (league_id, season),
+            ).fetchall()
+            results = db.execute(
+                "SELECT period, cat, result FROM results WHERE league_id = ? AND season = ?",
+                (league_id, season),
+            ).fetchall()
+        return forecasts, {(period, cat): result for period, cat, result in results}
 
     def count(self) -> int:
         with self._connect() as db:

@@ -231,6 +231,7 @@ class Report:
             self.all_rosters()
             self.week_changes()
         self.popular()
+        self.accuracy()
         self.notes()
         return "\n".join(self.lines).strip() + "\n"
 
@@ -1306,6 +1307,47 @@ class Report:
                 ),
             )
         )
+
+    def accuracy(self) -> None:
+        self.section("FORECAST ACCURACY")
+        acc = self.view.get("accuracy")
+        if not acc:
+            self.add(
+                "No finished matchup with recorded forecasts yet: the log starts filling after the "
+                "first full week of daily refreshes."
+            )
+            return
+
+        def brier(value: float | None) -> str:
+            return f"{value:.3f}" if value is not None else "-"
+
+        self.add(
+            f"{acc['forecasts']} category forecasts over {acc['matchups']} finished matchup(s). "
+            f"Brier score {brier(acc['brier'])} (0 perfect, 0.25 a coin flip); from each week's "
+            f"first forecast {brier(acc['brier_first'])}; matchup winner "
+            f"{brier(acc['brier_matchup'])}.",
+        )
+        if acc["likely_correct"] is not None:
+            self.add(
+                "Likely win / likely loss calls that came true: "
+                f"{acc['likely_correct'] * 100:.0f}% of {acc['likely_calls']}."
+            )
+        if acc["calibration"]:
+            self.add("")
+            self.add(
+                *table(
+                    ["Forecast confidence", "Forecasts", "Expected", "Came true"],
+                    (
+                        [
+                            c["range"],
+                            c["forecasts"],
+                            f"{c['expected'] * 100:.0f}%",
+                            f"{c['actual'] * 100:.0f}%",
+                        ]
+                        for c in acc["calibration"]
+                    ),
+                )
+            )
 
     def notes(self) -> None:
         self.section("DATA NOTES")
