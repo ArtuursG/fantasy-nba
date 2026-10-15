@@ -180,12 +180,13 @@ def plan_days(
     now: datetime,
     *,
     remaining: bool = True,
-    available_from: dict[int, date] | None = None,
+    windows: dict[int, tuple[date | None, date | None]] | None = None,
 ) -> list[DayPlan]:
     """Best lineup per day: remaining games (tip-off after `now`) or, with
-    remaining=False, games already played. `available_from` holds players
-    back until a date (a waiver claim that hasn't cleared yet)."""
-    available_from = available_from or {}
+    remaining=False, games already played. `windows` limits players to a
+    first and/or last day on the roster (a pickup that arrives later, a
+    player dropped after his last useful game)."""
+    windows = windows or {}
     slots = starting_slots(snapshot.league.lineup_slots)
     roster = [
         snapshot.players[s.player_id]
@@ -201,9 +202,7 @@ def plan_days(
             continue
         teams_playing = {g.home_id for g in games} | {g.away_id for g in games}
         playing = [
-            p
-            for p in roster
-            if p.pro_team_id in teams_playing and day >= available_from.get(p.id, day)
+            p for p in roster if p.pro_team_id in teams_playing and _in_window(windows, p.id, day)
         ]
         available = [p for p in playing if is_available(p, day)]
         lineup = Lineup(slots)
@@ -227,6 +226,11 @@ def plan_days(
             )
         )
     return plans
+
+
+def _in_window(windows: dict[int, tuple[date | None, date | None]], pid: int, day: date) -> bool:
+    start, end = windows.get(pid, (None, None))
+    return (start is None or day >= start) and (end is None or day <= end)
 
 
 def candidate_days(

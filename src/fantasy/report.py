@@ -38,11 +38,11 @@ VALUE_LABELS = {
 def num(value: Any, digits: int = 1) -> str:
     if value is None:
         return "-"
-    return f"{value:.{digits}f}"
+    return f"{round(value, digits) + 0.0:.{digits}f}"
 
 
 def pct(value: Any) -> str:
-    return "-" if value is None else f"{value:.3f}"
+    return "-" if value is None else f"{round(value, 3) + 0.0:.3f}"
 
 
 def signed(value: Any, digits: int = 1) -> str:
@@ -208,6 +208,7 @@ class Report:
     def render(self) -> str:
         self.header()
         self.rules()
+        self.lineup()
         self.my_roster()
         self.alerts()
         self.matchup()
@@ -271,6 +272,38 @@ class Report:
                 f"{'it' if len(m['punt']) == 1 else 'them'} out; the matchup section still "
                 "covers every category."
             )
+
+    def lineup(self) -> None:
+        self.section("TODAY'S LINEUP CHECK")
+        check = self.view.get("lineup")
+        if not check:
+            self.add("No games left to set a lineup for.")
+            return
+        when = f"{check['day']} ({'today' if check['is_today'] else 'next game day'})"
+        lock = f", first tip-off for my starters {check['lock'][11:]}" if check["lock"] else ""
+        if check["lost_games"]:
+            status = (
+                f"{check['current_starts']} of {check['best_starts']} possible starts set: "
+                f"{check['lost_games']} game(s) lost unless the lineup changes."
+            )
+        else:
+            status = f"all {check['best_starts']} possible starts are set."
+        self.add(f"{when}{lock}: {status}")
+        for swap in check["swaps"]:
+            tip = f", {swap['tipoff']}" if swap["tipoff"] else ""
+            if swap["for"]:
+                self.add(
+                    f"- Start {swap['start']}{tip} in {swap['slot']} for {swap['for']} "
+                    f"({swap['reason']})"
+                )
+            else:
+                self.add(f"- Start {swap['start']}{tip} (rearrange slots to fit him)")
+        for item in check["bench"]:
+            self.add(f"- Bench {item['name']} ({item['reason']})")
+        self.add(*(f"- Check before lock: {w}" for w in check["watch"]))
+        self.add(*(f"- {flag}" for flag in check["ir"]))
+        self.add(*(f"- Consider: {c}" for c in check["consider"]))
+        self.add(f"Open starting slots that day: {check['open_slots']} (room to stream).")
 
     def my_roster(self) -> None:
         self.section("MY ROSTER")
@@ -678,8 +711,8 @@ class Report:
                     m["drop"],
                     m["waiver_until"] or "now",
                     f"{m['usable_change']:+d}",
-                    f"{m['expected_wins_change']:+.2f}",
-                    f"{m['p_win_after'] * 100:.0f}% ({m['p_win_change'] * 100:+.0f})",
+                    signed(m["expected_wins_change"], 2),
+                    f"{m['p_win_after'] * 100:.0f}% ({signed(m['p_win_change'] * 100, 0)})",
                     changes or "-",
                     signed(m["value_change"], 2),
                 ]

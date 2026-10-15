@@ -43,6 +43,8 @@ SETTINGS_KEYS = (
     "ESPN_SWID",
     "FANTASY_TEAM",
     "FANTASY_PUNT",
+    "TELEGRAM_BOT_TOKEN",
+    "TELEGRAM_CHAT_ID",
 )
 
 
@@ -62,6 +64,8 @@ class Config:
     gamelog_days: int = 30
     fa_pool: int = 150
     punt: tuple[str, ...] = ()
+    telegram_token: str | None = None
+    telegram_chat_id: str | None = None
 
     def db_path(self, demo: bool = False) -> Path:
         return self.data_dir / ("demo.db" if demo else "fantasy.db")
@@ -160,6 +164,8 @@ def load_config(env: Mapping[str, str] | None = None, today: date | None = None)
         gamelog_days=_int(env, "FANTASY_GAMELOG_DAYS") or 30,
         fa_pool=_int(env, "FANTASY_FA_POOL") or 150,
         punt=parse_punt(env.get("FANTASY_PUNT")),
+        telegram_token=(env.get("TELEGRAM_BOT_TOKEN") or "").strip() or None,
+        telegram_chat_id=(env.get("TELEGRAM_CHAT_ID") or "").strip() or None,
     )
 
 

@@ -59,15 +59,17 @@ class Context:
     def my_team(self) -> Team | None:
         return self.snap.team(self.snap.my_team_id)
 
-    def matchup_for(self, team_id: int | None) -> Matchup | None:
+    def matchup_for(self, team_id: int | None, period: int | None = None) -> Matchup | None:
+        """The team's matchup in `period` (default: the current one)."""
+        period = period or self.snap.league.matchup_period
         for matchup in self.snap.matchups:
             sides = [matchup.home.team_id, matchup.away.team_id if matchup.away else None]
-            if team_id in sides:
+            if matchup.period == period and team_id in sides:
                 return matchup
         return None
 
-    def opponent_id(self, team_id: int | None) -> int | None:
-        matchup = self.matchup_for(team_id)
+    def opponent_id(self, team_id: int | None, period: int | None = None) -> int | None:
+        matchup = self.matchup_for(team_id, period)
         if matchup is None or matchup.away is None:
             return None
         return matchup.away.team_id if matchup.home.team_id == team_id else matchup.home.team_id

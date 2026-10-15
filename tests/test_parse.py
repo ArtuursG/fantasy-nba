@@ -254,7 +254,10 @@ def test_demo_bundle_parses_into_a_full_snapshot(today, world):
     assert today.league.matchup_acquisition_limit == 5
     assert len(today.teams) == 10
     assert today.my_team_id == 1
-    assert len(today.matchups) == 5
+    current = [m for m in today.matchups if m.period == today.league.matchup_period]
+    assert len(current) == 5
+    assert {m.period for m in today.matchups} == {4, 5, 6}  # last week final, next week
+    assert all(m.winner != "UNDECIDED" for m in today.matchups if m.period == 4)
     assert any(today.players[p].pool_status == "WAIVERS" for p in today.free_agent_ids)
     my_roster = today.team(1).roster
     assert sum(1 for s in my_roster if s.slot_id == 13) == 1

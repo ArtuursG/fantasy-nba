@@ -98,6 +98,9 @@ def make_handler(app: FantasyApp, allowed_hosts: set[str]) -> type[BaseHTTPReque
                 if path == "/api/refresh":
                     app.refresh(log=lambda _msg: None)
                     self._json(200, {"view": app.view(), "demo": app.demo})
+                elif path == "/api/telegram/test":
+                    app.send_alert(app.alert(always=True) or "Fantasy report: test message")
+                    self._json(200, {"sent": True})
                 elif path == "/api/settings":
                     form = json.loads(body or b"{}")
                     if not isinstance(form, dict):

@@ -114,7 +114,7 @@ def parse_bundle(raw: dict[str, Any], team_hint: str | None, demo: bool = False)
         teams=teams,
         players=players,
         free_agent_ids=free_agent_ids,
-        matchups=parse_matchups(league_raw, league.matchup_period),
+        matchups=parse_matchups(league_raw, league.matchup_period, around=1),
         transactions=transactions,
         pro_games=pro_games,
         pro_teams=pro_teams,
@@ -445,14 +445,18 @@ def _matchup_side(data: dict[str, Any]) -> MatchupSide:
     )
 
 
-def parse_matchups(raw: dict[str, Any], period: int) -> list[Matchup]:
+def parse_matchups(raw: dict[str, Any], period: int, around: int = 0) -> list[Matchup]:
+    """Matchups of `period`, and with `around` the periods either side of it
+    (last week's final results, next week's opponents)."""
+    wanted = range(period - around, period + around + 1)
     matchups = []
     for item in raw.get("schedule") or []:
-        if int(item.get("matchupPeriodId") or 0) != period or not item.get("home"):
+        item_period = int(item.get("matchupPeriodId") or 0)
+        if item_period not in wanted or not item.get("home"):
             continue
         matchups.append(
             Matchup(
-                period=period,
+                period=item_period,
                 home=_matchup_side(item["home"]),
                 away=_matchup_side(item["away"]) if item.get("away") else None,
                 winner=item.get("winner") or "UNDECIDED",

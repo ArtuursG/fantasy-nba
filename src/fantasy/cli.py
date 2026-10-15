@@ -1,4 +1,4 @@
-"""Command line: serve | refresh | report | daily."""
+"""Command line: serve | refresh | report | check | daily."""
 
 from __future__ import annotations
 
@@ -41,6 +41,16 @@ def build_parser() -> argparse.ArgumentParser:
     report.add_argument("--compact", action="store_true", help="Leave out the other rosters")
     report.add_argument("--out", type=Path, help="Write to this file instead of printing")
 
+    check = sub.add_parser(
+        "check",
+        parents=[common],
+        help="Refresh and check today's lineup; with --notify, alert on Telegram",
+    )
+    check.add_argument("--notify", action="store_true", help="Send the alert to Telegram")
+    check.add_argument(
+        "--always", action="store_true", help="Send even when nothing needs changing"
+    )
+
     daily = sub.add_parser(
         "daily", parents=[common], help="Refresh, then save the report (for a scheduled task)"
     )
@@ -80,6 +90,15 @@ def main(argv: list[str] | None = None) -> int:
             )
             for warning in snapshot.warnings:
                 print(f"Warning: {warning}", file=sys.stderr)
+            return 0
+        if args.command == "check":
+            app.refresh(log=lambda _msg: None)
+            text = app.alert(always=True) or ""
+            print(text)
+            alert = app.alert(always=args.always)
+            if args.notify and alert:
+                app.send_alert(alert)
+                print("Sent to Telegram.")
             return 0
         if args.command == "daily":
             snapshot = app.refresh()

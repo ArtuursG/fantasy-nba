@@ -4,6 +4,7 @@ from fantasy.report import render_report
 
 SECTIONS = [
     "LEAGUE RULES",
+    "TODAY'S LINEUP CHECK",
     "MY ROSTER",
     "INJURY / ROLE CHANGES",
     "CURRENT MATCHUP",

@@ -76,7 +76,7 @@ def simulate_moves(
                 replace(team, roster=roster),
                 mine.side,
                 elapsed=mine.elapsed,
-                available_from={fa_id: start} if start else None,
+                windows={fa_id: (start, None)} if start else None,
             )
             projected = _projected(ctx, side, theirs)
             outlook = matchup_outlook(projected)

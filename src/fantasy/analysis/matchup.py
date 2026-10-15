@@ -57,18 +57,17 @@ def project_side(
     team: Team,
     side: MatchupSide | None,
     elapsed: dict[str, float] | None = None,
-    available_from: dict[int, date] | None = None,
+    windows: dict[int, tuple[date | None, date | None]] | None = None,
+    sps: list[int] | None = None,
 ) -> SideProjection:
-    """Projected rest of the matchup for a roster. `elapsed` reuses another
-    projection's estimate of what was played so far, so a simulated roster
-    move changes only the days ahead."""
-    remaining = plan_days(
-        ctx.calendar, ctx.snap, team, ctx.values, ctx.sps, ctx.now, available_from=available_from
-    )
+    """Projected rest of a matchup for a roster (the current one unless
+    `sps` names another). `elapsed` reuses another projection's estimate of
+    what was played so far, so a simulated roster move changes only the
+    days ahead; `windows` bounds players' days on the roster."""
+    sps = sps or ctx.sps
+    remaining = plan_days(ctx.calendar, ctx.snap, team, ctx.values, sps, ctx.now, windows=windows)
     if elapsed is None:
-        played = plan_days(
-            ctx.calendar, ctx.snap, team, ctx.values, ctx.sps, ctx.now, remaining=False
-        )
+        played = plan_days(ctx.calendar, ctx.snap, team, ctx.values, sps, ctx.now, remaining=False)
         elapsed = _sum_lines(ctx, played)
     return SideProjection(
         team=team,

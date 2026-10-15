@@ -364,6 +364,15 @@ class DemoWorld:
         benched.starter, benched.base_min = True, 31.0
         benched.shift = (t - 10, 21.0, False)
 
+        # A bench player of mine whose team plays tonight: the lineup check
+        # should tell me to start him.
+        tonight = next(g for g in self.games if g.sp == t)
+        idle_bench = min(
+            (self._player(1, i) for i in range(8, len(ROSTER_SHAPE))),
+            key=lambda p: p.quality * p.base_min,
+        )
+        idle_bench.pro_team = tonight.home
+
         # Give my roster exactly three C-eligible players, under the cap of 4.
         my_team = [self.players[p] for p in self.rosters[1]]
         for player in my_team:
@@ -678,6 +687,41 @@ class DemoWorld:
                     totals[key] += value
         return totals
 
+    def _schedule_item(
+        self,
+        item_id: int,
+        item_period: int,
+        current: int,
+        home: int,
+        away: int,
+        rosters: dict[int, list[int]],
+        as_of: datetime,
+    ) -> dict:
+        """One league matchup: next week's has no score yet, last week's is final."""
+        item: dict[str, Any] = {
+            "id": item_id,
+            "matchupPeriodId": item_period,
+            "winner": "UNDECIDED",
+            "home": {"teamId": home},
+            "away": {"teamId": away},
+        }
+        if item_period > current:
+            return item
+        mine = self._matchup_totals(rosters[home], as_of, item_period)
+        theirs = self._matchup_totals(rosters[away], as_of, item_period)
+        home_stats, home_record = self._score_by_stat(mine, theirs)
+        away_stats, away_record = self._score_by_stat(theirs, mine)
+        item["home"]["cumulativeScore"] = dict(
+            zip(("wins", "losses", "ties"), home_record, strict=True), scoreByStat=home_stats
+        )
+        item["away"]["cumulativeScore"] = dict(
+            zip(("wins", "losses", "ties"), away_record, strict=True), scoreByStat=away_stats
+        )
+        if item_period < current:
+            wins, losses = home_record[0], home_record[1]
+            item["winner"] = "HOME" if wins > losses else "AWAY" if losses > wins else "TIE"
+        return item
+
     def _values_by_stat(self, ids: list[int], as_of: datetime, sp: int) -> dict[str, float]:
         totals = self._totals(ids, as_of, range(1, sp + 1))
         values = {
@@ -761,32 +805,19 @@ class DemoWorld:
             )
 
         schedule = []
-        for home, away in ((1, 2), (3, 4), (5, 6), (7, 8), (9, 10)):
-            mine = self._matchup_totals(rosters[home], as_of, period)
-            theirs = self._matchup_totals(rosters[away], as_of, period)
-            home_stats, home_record = self._score_by_stat(mine, theirs)
-            away_stats, away_record = self._score_by_stat(theirs, mine)
-            schedule.append(
-                {
-                    "id": len(schedule) + 1,
-                    "matchupPeriodId": period,
-                    "winner": "UNDECIDED",
-                    "home": {
-                        "teamId": home,
-                        "cumulativeScore": dict(
-                            zip(("wins", "losses", "ties"), home_record, strict=True),
-                            scoreByStat=home_stats,
-                        ),
-                    },
-                    "away": {
-                        "teamId": away,
-                        "cumulativeScore": dict(
-                            zip(("wins", "losses", "ties"), away_record, strict=True),
-                            scoreByStat=away_stats,
-                        ),
-                    },
-                }
-            )
+        for item_period, pairs in (
+            (period - 1, ((1, 10), (2, 3), (4, 5), (6, 7), (8, 9))),
+            (period, ((1, 2), (3, 4), (5, 6), (7, 8), (9, 10))),
+            (period + 1, ((1, 3), (2, 4), (5, 7), (6, 8), (9, 10))),
+        ):
+            if item_period < 1:
+                continue
+            for home, away in pairs:
+                schedule.append(
+                    self._schedule_item(
+                        len(schedule) + 1, item_period, period, home, away, rosters, as_of
+                    )
+                )
 
         league = {
             "id": DEMO_LEAGUE_ID,

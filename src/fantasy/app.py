@@ -22,6 +22,7 @@ from fantasy.demo import MY_TEAM, DemoWorld
 from fantasy.espn.client import EspnClient, fetch_bundle
 from fantasy.espn.parse import parse_bundle
 from fantasy.models import Snapshot
+from fantasy.notify import NotifyError, alert_text, send_telegram
 from fantasy.report import render_report
 from fantasy.store import SnapshotStore
 from fantasy.timeutil import local_date
@@ -106,8 +107,25 @@ class FantasyApp:
             "has_espn_s2": bool(config.espn_s2),
             "has_swid": bool(config.swid),
             "punt": list(config.punt),
+            "has_telegram": bool(config.telegram_token and config.telegram_chat_id),
             "demo": self.demo,
         }
+
+    def alert(self, always: bool = False) -> str | None:
+        view = self.view()
+        return alert_text(view, always=always) if view else None
+
+    def send_alert(self, text: str) -> None:
+        config = self.config
+        if not (config.telegram_token and config.telegram_chat_id):
+            raise ConfigError(
+                "Telegram is not set up: add TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in the "
+                "dashboard's League settings or in .dev.vars."
+            )
+        try:
+            send_telegram(config.telegram_token, config.telegram_chat_id, text)
+        except NotifyError as exc:
+            raise ConfigError(str(exc)) from exc
 
     def update_settings(self, form: dict[str, str]) -> dict:
         """Settings from the dashboard form: a league URL (league, team and
@@ -122,7 +140,12 @@ class FantasyApp:
                 )
             # The URL now carries these; stale separate values would override it.
             updates.update({"ESPN_LEAGUE_URL": url, "ESPN_LEAGUE_ID": "", "ESPN_SEASON": ""})
-        for field, key in (("espn_s2", "ESPN_S2"), ("swid", "ESPN_SWID")):
+        for field, key in (
+            ("espn_s2", "ESPN_S2"),
+            ("swid", "ESPN_SWID"),
+            ("telegram_token", "TELEGRAM_BOT_TOKEN"),
+            ("telegram_chat_id", "TELEGRAM_CHAT_ID"),
+        ):
             if (form.get(field) or "").strip():
                 updates[key] = form[field].strip()
         if "team" in form:

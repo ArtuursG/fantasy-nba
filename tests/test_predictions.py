@@ -70,7 +70,7 @@ def test_waiver_pickup_only_plays_once_he_clears():
         {},
         ctx.sps,
         ctx.now,
-        available_from={9: ctx.calendar.date_of(11)},
+        windows={9: (ctx.calendar.date_of(11), None)},
     )
     assert [9 in p.started for p in held] == [False, True]
 

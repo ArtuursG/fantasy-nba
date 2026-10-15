@@ -13,6 +13,7 @@ from fantasy.analysis.advanced import advanced_stats
 from fantasy.analysis.changes import compare
 from fantasy.analysis.context import Context
 from fantasy.analysis.freeagents import rank_free_agents
+from fantasy.analysis.lineup import lineup_check
 from fantasy.analysis.matchup import (
     SideProjection,
     analyze_matchup,
@@ -384,6 +385,7 @@ def build_view(
     for row in [r for t in teams for r in t["roster"]] + free_agent_rows + streamer_rows:
         row["rank"] = rank_by_id.get(row["id"])
 
+    my_ir = _ir_status(ctx, me) if me else None
     prev_at = parse_iso(prev.fetched_at).astimezone(tz) if prev else None
     week_at = parse_iso(week_ago.fetched_at).astimezone(tz) if week_ago else None
     first, last = ctx.calendar.date_of(ctx.sps[0]), ctx.calendar.date_of(ctx.sps[-1])
@@ -426,7 +428,8 @@ def build_view(
             },
         },
         "my_team": next((t for t in teams if t["is_me"]), None),
-        "my_ir": _ir_status(ctx, me) if me else None,
+        "my_ir": my_ir,
+        "lineup": lineup_check(ctx, me, tz, my_ir["flags"]) if me and my_ir else None,
         "my_c_count": my_c,
         "teams": teams,
         "matchup": matchup,

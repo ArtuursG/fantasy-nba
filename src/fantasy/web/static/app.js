@@ -205,6 +205,28 @@ function renderSeason(v) {
   );
 }
 
+function renderLineup(v) {
+  const c = v.lineup;
+  if (!c) return null;
+  const items = [];
+  c.swaps.forEach((s) => items.push(h("li", { class: "bad" }, s.for ? `Start ${s.start}${s.tipoff ? " (" + s.tipoff + ")" : ""} in ${s.slot} for ${s.for} (${s.reason})` : `Start ${s.start}: rearrange slots to fit him`)));
+  c.bench.forEach((b) => items.push(h("li", { class: "bad" }, `Bench ${b.name} (${b.reason})`)));
+  c.watch.forEach((w) => items.push(h("li", { class: "warn" }, `Check before lock: ${w}`)));
+  c.ir.forEach((f) => items.push(h("li", { class: "bad" }, f)));
+  c.consider.forEach((f) => items.push(h("li", {}, `Consider: ${f}`)));
+  const ok = c.lost_games === 0;
+  return card(
+    `Lineup check: ${c.day}${c.is_today ? " (today)" : ""}`,
+    true,
+    h("div", { class: "row" },
+      h("div", {}, h("div", { class: "muted" }, "Starts set"), h("div", { class: "big " + (ok ? "good" : "bad") }, `${c.current_starts} / ${c.best_starts}`)),
+      h("div", {}, h("div", { class: "muted" }, "First tip-off"), h("div", { class: "big" }, c.lock ? c.lock.slice(11) : "-")),
+      h("div", {}, h("div", { class: "muted" }, "Open slots"), h("div", { class: "big" }, String(c.open_slots)))
+    ),
+    items.length ? h("ul", { class: "plain" }, items) : h("p", { class: "good" }, "Lineup is set: nothing to change.")
+  );
+}
+
 function renderChanges(v) {
   const c = v.changes;
   let body;
@@ -473,6 +495,14 @@ function renderSettings(open) {
   const swid = h("input", { type: "password", placeholder: s.has_swid ? "saved (leave empty to keep)" : "SWID cookie, {...}", autocomplete: "off" });
   const team = h("input", { type: "text", value: s.team || "" });
   const punt = h("input", { type: "text", value: (s.punt || []).join(", "), placeholder: "e.g. TO" });
+  const tgToken = h("input", { type: "password", placeholder: s.has_telegram ? "saved (leave empty to keep)" : "from @BotFather", autocomplete: "off" });
+  const tgChat = h("input", { type: "text", placeholder: s.has_telegram ? "saved (leave empty to keep)" : "your chat id", autocomplete: "off" });
+  const test = h("button", { type: "button" }, "Send test alert");
+  test.addEventListener("click", async () => {
+    const res = await fetch("/api/telegram/test", { method: "POST" });
+    const data = await res.json();
+    setStatus(res.ok ? "Test alert sent to Telegram." : data.error || "Sending failed.", res.ok ? "ok" : "error");
+  });
   const status = h("p", { class: "muted" },
     s.league_id ? `League ${s.league_id}, season ${s.season}, team "${s.team}", cookies ${s.has_espn_s2 && s.has_swid ? "saved" : "missing"}.` : "No league set yet.");
   const save = h("button", { type: "button", class: "primary" }, "Save settings");
@@ -481,6 +511,8 @@ function renderSettings(open) {
     if (url.value.trim()) form.league_url = url.value.trim();
     if (s2.value.trim()) form.espn_s2 = s2.value.trim();
     if (swid.value.trim()) form.swid = swid.value.trim();
+    if (tgToken.value.trim()) form.telegram_token = tgToken.value.trim();
+    if (tgChat.value.trim()) form.telegram_chat_id = tgChat.value.trim();
     const res = await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
     const data = await res.json();
     if (!res.ok) { setStatus(data.error || "Saving failed.", "error"); return; }
@@ -497,9 +529,11 @@ function renderSettings(open) {
       field("espn_s2", s2),
       field("SWID", swid),
       field("Your team", team, "Name, abbreviation or team id; the URL's teamId is used when empty."),
-      field("Punt categories", punt, "Comma-separated, e.g. TO or TO, FT%. Values and rankings leave them out.")
+      field("Punt categories", punt, "Comma-separated, e.g. TO or TO, FT%. Values and rankings leave them out."),
+      field("Telegram bot token", tgToken, "Optional: lineup alerts on your phone. Create a bot with @BotFather."),
+      field("Telegram chat id", tgChat, "Send your bot a message, then open api.telegram.org/bot<token>/getUpdates to see it.")
     ),
-    save,
+    h("div", { class: "actions" }, save, s.has_telegram ? test : null),
     status
   );
 }
@@ -522,6 +556,7 @@ function render(view, demo) {
   $("subtitle").textContent = `${m.league} · ${m.my_team || "team not found"} · snapshot ${m.fetched_at}` + (m.compared_with ? ` · vs ${m.compared_with}` : "");
   // Some panels are absent (no matchup, no season totals yet): skip them.
   const panels = [
+    renderLineup(view),
     renderMatchup(view),
     renderChanges(view),
     renderAcquisitions(view),
