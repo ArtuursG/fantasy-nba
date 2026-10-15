@@ -182,6 +182,37 @@ function renderStreamPlan(v) {
   );
 }
 
+function renderStrategy(v) {
+  const st = v.strategy;
+  if (!st) return null;
+  const cls = { Chase: "good", Protect: "warn", Locked: "", Concede: "bad", Hold: "warn", Punted: "" };
+  return card(
+    "Category strategy",
+    false,
+    h("div", { class: "chips" }, st.categories.map((r) => h("span", { class: "chip " + (cls[r.plan] || "") }, `${r.plan}: ${r.cat}`))),
+    table(["Cat", "Win %", "Plan", "Per streamer game"], st.categories.map((r) => ({ cells: [r.cat, Math.round(r.p_win * 100) + "%", r.plan, (r.leverage >= 0 ? "+" : "") + (r.leverage * 100).toFixed(1) + " pts"] }))),
+    st.best_fits.length ? h("p", {}, "Best fits for the chase categories: " + st.best_fits.map((f) => f.name + (f.helps.length ? ` (${f.helps.join(", ")})` : "")).join(", ")) : null
+  );
+}
+
+function renderNextMatchup(v) {
+  const nm = v.next_matchup;
+  if (!nm) return null;
+  const fmt = (cat, x) => (cat.endsWith("%") ? pct(x) : num(x, 0));
+  return card(
+    `Next matchup: ${nm.dates[0]} - ${nm.dates[1]} vs ${nm.opponent}`,
+    true,
+    h("div", { class: "row" },
+      h("div", {}, h("div", { class: "muted" }, "Win chance"), h("div", { class: "big" }, Math.round(nm.outlook.p_win_matchup * 100) + "%")),
+      h("div", {}, h("div", { class: "muted" }, "Expected categories"), h("div", { class: "big" }, `${nm.outlook.expected_wins.toFixed(1)} / ${nm.outlook.categories}`)),
+      h("div", {}, h("div", { class: "muted" }, "Games (usable)"), h("div", {}, `Me ${nm.games.me.scheduled} (${nm.games.me.usable}) · Opp ${nm.games.opp.scheduled} (${nm.games.opp.usable})`))
+    ),
+    table(["Cat", "My proj", "Opp proj", "Win %", "Call", "My rank", "Opp rank"], nm.projected.map((p) => ({ cells: [p.cat, fmt(p.cat, p.me), fmt(p.cat, p.opp), Math.round(p.p_win * 100) + "%", p.call, nm.ranks[p.cat]?.me ?? "-", nm.ranks[p.cat]?.opp ?? "-"] }))),
+    h("h3", {}, "Days"),
+    table(["Day", "NBA games", "Volume", "My players", "My open slots", "Opp playing"], nm.days.map((d) => ({ cells: [d.label, d.nba_games, d.volume, d.my_playing.length, { node: d.my_open_slots, cls: d.my_open_slots > 0 ? "good" : "" }, d.opp_playing] })))
+  );
+}
+
 function renderAdvanced(v) {
   const t = v.my_team;
   if (!t) return null;
@@ -581,11 +612,13 @@ function render(view, demo) {
   const panels = [
     renderLineup(view),
     renderMatchup(view),
+    renderStrategy(view),
     renderChanges(view),
     renderAcquisitions(view),
     renderAlerts(view),
     renderMyRoster(view),
     renderSchedule(view),
+    renderNextMatchup(view),
     renderFreeAgents(view),
     renderSimulator(view),
     renderStreamPlan(view),

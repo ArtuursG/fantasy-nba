@@ -212,12 +212,14 @@ class Report:
         self.my_roster()
         self.alerts()
         self.matchup()
+        self.strategy()
         self.transactions()
         self.free_agents()
         self.simulator()
         self.stream_plan()
         self.opponent_changes()
         self.schedule()
+        self.next_matchup()
         self.acquisitions()
         self.waiver_order()
         self.important_changes()
@@ -534,6 +536,94 @@ class Report:
                 "(Current FGA/FTA are not in ESPN's matchup data; they are estimated from "
                 "the lineups played so far to project FG% and FT%.)"
             )
+
+    def strategy(self) -> None:
+        self.section("CATEGORY STRATEGY THIS MATCHUP")
+        st = self.view.get("strategy")
+        if not st:
+            self.add("No current matchup.")
+            return
+        groups = [
+            ("Chase (biggest gain per extra game first)", st["chase"]),
+            ("Protect", st["protect"]),
+            ("Locked", st["locked"]),
+            ("Concede", st["concede"]),
+            ("Hold (streaming hurts it; win it with the lineup)", st["hold"]),
+            ("Punted", st["punted"]),
+        ]
+        self.add(*(f"{label}: {', '.join(cats)}" for label, cats in groups if cats), "")
+        self.add(
+            *table(
+                ["Cat", "Win %", "Plan", "Win % per extra streamer game"],
+                (
+                    [
+                        r["cat"],
+                        f"{r['p_win'] * 100:.0f}%",
+                        r["plan"],
+                        f"{r['leverage'] * 100:+.1f} pts",
+                    ]
+                    for r in st["categories"]
+                ),
+            )
+        )
+        if st["best_fits"]:
+            fits = ", ".join(
+                f"{f['name']} ({f['pro_team']}{': ' + ', '.join(f['helps']) if f['helps'] else ''})"
+                for f in st["best_fits"]
+            )
+            self.add("", f"Free agents who fit the chase categories best: {fits}")
+
+    def next_matchup(self) -> None:
+        self.section("NEXT MATCHUP PREVIEW")
+        nm = self.view.get("next_matchup")
+        if not nm:
+            self.add("No next matchup in the schedule.")
+            return
+        games = nm["games"]
+        outlook = nm["outlook"]
+        self.add(
+            f"Matchup {nm['period']} ({nm['dates'][0]} - {nm['dates'][1]}) vs {nm['opponent']} "
+            f"(record {nm['opponent_record']})",
+            f"With both rosters as they stand: expected categories {outlook['expected_wins']:.1f} "
+            f"of {outlook['categories']}, win chance {outlook['p_win_matchup'] * 100:.0f}%",
+            f"Games: me {games['me']['scheduled']} scheduled / {games['me']['usable']} usable; "
+            f"opponent {games['opp']['scheduled']} / {games['opp']['usable']}",
+            "",
+        )
+        self.add(
+            *table(
+                ["Cat", "My proj", "Opp proj", "Win %", "Call", "My strength rank", "Opp rank"],
+                (
+                    [
+                        p["cat"],
+                        pct(p["me"]) if p["cat"].endswith("%") else num(p["me"], 0),
+                        pct(p["opp"]) if p["cat"].endswith("%") else num(p["opp"], 0),
+                        f"{p['p_win'] * 100:.0f}%",
+                        p["call"],
+                        nm["ranks"].get(p["cat"], {}).get("me") or "-",
+                        nm["ranks"].get(p["cat"], {}).get("opp") or "-",
+                    ]
+                    for p in nm["projected"]
+                ),
+            )
+        )
+        self.add("", "Days (streaming room is open slots on low-volume days):", "")
+        self.add(
+            *table(
+                ["Day", "NBA games", "Volume", "My players", "My open slots", "Opp playing"],
+                (
+                    [
+                        d["label"],
+                        d["nba_games"],
+                        d["volume"],
+                        len(d["my_playing"]),
+                        d["my_open_slots"],
+                        d["opp_playing"],
+                    ]
+                    for d in nm["days"]
+                ),
+            )
+        )
 
     def transactions(self) -> None:
         self.section("LEAGUE TRANSACTIONS SINCE LAST REPORT")

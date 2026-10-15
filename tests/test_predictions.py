@@ -157,3 +157,32 @@ def test_streaming_plan_respects_no_acquisitions(today):
     theirs = project_side(ctx, today.team(ctx.opponent_id(me.id)), opp_side)
     plan = plan_streams(ctx, mine, theirs, today.free_agent_ids, 0)
     assert plan["steps"] == [] and plan["final"] == plan["base"]
+
+
+def test_category_strategy_classifies_by_odds_and_leverage(snapshots):
+    from fantasy.analysis.view import build_view
+    from tests.conftest import RIGA
+
+    week, yesterday, today = snapshots
+    st = build_view(today, yesterday, week, RIGA, punt=("TO",))["strategy"]
+    plans = {r["cat"]: r for r in st["categories"]}
+    assert plans["TO"]["plan"] == "Punted"
+    assert plans["TO"]["leverage"] < 0  # every streamed game adds turnovers
+    for row in st["categories"]:
+        if row["plan"] == "Locked":
+            assert row["p_win"] >= 0.9
+        if row["plan"] == "Concede":
+            assert row["p_win"] <= 0.1
+        if row["plan"] == "Chase":
+            assert 0.1 < row["p_win"] < 0.7 and row["leverage"] > 0
+    chase_leverage = [plans[c]["leverage"] for c in st["chase"]]
+    assert chase_leverage == sorted(chase_leverage, reverse=True)
+
+
+def test_next_matchup_preview(view):
+    nm = view["next_matchup"]
+    assert nm["period"] == view["meta"]["matchup_period"] + 1
+    assert nm["opponent"] == "Bullu Kojas"
+    assert len(nm["days"]) == 7 and nm["dates"][0].startswith("Mon")
+    assert nm["games"]["me"]["usable"] <= nm["games"]["me"]["scheduled"]
+    assert 0 <= nm["outlook"]["p_win_matchup"] <= 1

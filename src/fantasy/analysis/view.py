@@ -35,6 +35,7 @@ from fantasy.analysis.schedule import (
 )
 from fantasy.analysis.simulator import simulate_moves
 from fantasy.analysis.stats import REVERSE_CATS, average, usage_proxy
+from fantasy.analysis.strategy import category_strategy, next_matchup
 from fantasy.espn.constants import (
     BENCH_SLOT,
     C_SLOT,
@@ -330,6 +331,7 @@ def build_view(
     matchup = None
     moves = None
     stream_plan = None
+    strategy = None
     if me is not None and opp_id is not None and snap.team(opp_id):
         my_side, opp_side = sides_for(ctx, me.id)
         mine: SideProjection = project_side(ctx, me, my_side)
@@ -339,6 +341,7 @@ def build_view(
         acquisitions_left = _acquisitions(ctx, me)["remaining"]
         moves = simulate_moves(ctx, mine, theirs, candidates, acquisitions_left)
         stream_plan = plan_streams(ctx, mine, theirs, candidates, acquisitions_left)
+        strategy = category_strategy(ctx, matchup["projected"], candidates)
 
     teams = []
     for team in snap.teams:
@@ -434,6 +437,8 @@ def build_view(
         "matchup": matchup,
         "moves": moves,
         "stream_plan": stream_plan,
+        "strategy": strategy,
+        "next_matchup": next_matchup(ctx, strength),
         "season_standings": _season_standings(ctx),
         "acquisitions": _acquisitions(ctx, me) if me else None,
         "waiver_order": [
