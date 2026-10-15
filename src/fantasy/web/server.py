@@ -98,6 +98,11 @@ def make_handler(app: FantasyApp, allowed_hosts: set[str]) -> type[BaseHTTPReque
                 if path == "/api/refresh":
                     app.refresh(log=lambda _msg: None)
                     self._json(200, {"view": app.view(), "demo": app.demo})
+                elif path == "/api/trade":
+                    form = json.loads(body or b"{}")
+                    give = [int(x) for x in form.get("give") or []]
+                    get = [int(x) for x in form.get("get") or []]
+                    self._json(200, app.evaluate_trade(give, get))
                 elif path == "/api/telegram/test":
                     app.send_alert(app.alert(always=True) or "Fantasy report: test message")
                     self._json(200, {"sent": True})
@@ -109,8 +114,8 @@ def make_handler(app: FantasyApp, allowed_hosts: set[str]) -> type[BaseHTTPReque
                     self._json(200, {"settings": settings, "view": app.view()})
                 else:
                     self._send(404, b"Not found", "text/plain; charset=utf-8")
-            except json.JSONDecodeError:
-                self._json(400, {"error": "Settings must be JSON"})
+            except (json.JSONDecodeError, TypeError, ValueError, AttributeError):
+                self._json(400, {"error": "The request body must be valid JSON"})
             except (ConfigError, EspnError) as exc:
                 self._json(400, {"error": str(exc)})
             except Exception as exc:  # the page should show it, not hang

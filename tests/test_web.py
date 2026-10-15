@@ -90,3 +90,14 @@ def test_settings_endpoint_never_returns_cookies(server, tmp_path, monkeypatch):
     assert "secret-cookie" not in httpx.get(server + "/api/settings").text
     bad = httpx.post(server + "/api/settings", json={"punt": "DUNKS"})
     assert bad.status_code == 400 and "FANTASY_PUNT" in bad.json()["error"]
+
+
+def test_trade_endpoint(server):
+    view = httpx.post(server + "/api/refresh", timeout=60).json()["view"]
+    give = [view["my_team"]["roster"][-2]["id"]]
+    partner = next(t for t in view["teams"] if not t["is_me"])
+    get = [partner["roster"][0]["id"]]
+    response = httpx.post(server + "/api/trade", json={"give": give, "get": get})
+    assert response.status_code == 200 and response.json()["partner"] == partner["name"]
+    bad = httpx.post(server + "/api/trade", json={"give": get, "get": give})
+    assert bad.status_code == 400 and "own roster" in bad.json()["error"]

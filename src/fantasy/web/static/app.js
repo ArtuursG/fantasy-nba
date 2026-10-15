@@ -213,6 +213,73 @@ function renderNextMatchup(v) {
   );
 }
 
+function renderTrade(v) {
+  const me = v.my_team;
+  if (!me) return null;
+  const others = v.teams.filter((t) => !t.is_me);
+  const result = h("div", {});
+  const giveBoxes = me.roster.map((r) => {
+    const box = h("input", { type: "checkbox", value: r.id });
+    return [box, h("label", { class: "toggle" }, box, `${r.name} (${signed(r.value, 2)})`)];
+  });
+  const partner = h("select", {}, others.map((t) => h("option", { value: t.id }, t.name)));
+  const getList = h("div", { class: "picklist" });
+  let getBoxes = [];
+  const drawPartner = () => {
+    const team = others.find((t) => String(t.id) === partner.value) || others[0];
+    getBoxes = team.roster.map((r) => {
+      const box = h("input", { type: "checkbox", value: r.id });
+      return [box, h("label", { class: "toggle" }, box, `${r.name} (${signed(r.value, 2)})`)];
+    });
+    getList.replaceChildren(...getBoxes.map(([, label]) => label));
+  };
+  partner.addEventListener("change", drawPartner);
+  drawPartner();
+  const go = h("button", { type: "button", class: "primary" }, "Evaluate trade");
+  go.addEventListener("click", async () => {
+    const give = giveBoxes.filter(([b]) => b.checked).map(([b]) => Number(b.value));
+    const get = getBoxes.filter(([b]) => b.checked).map(([b]) => Number(b.value));
+    const res = await fetch("/api/trade", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ give, get }) });
+    const data = await res.json();
+    if (!res.ok) { result.replaceChildren(h("p", { class: "bad" }, data.error || "Evaluation failed.")); return; }
+    const rankCell = (b, a) => ({ node: `${b ?? "-"} → ${a ?? "-"}`, cls: a < b ? "good" : a > b ? "bad" : "" });
+    const fmt = (cat, x) => (cat.endsWith("%") ? pct(x) : num(x));
+    const mu = data.matchup;
+    result.replaceChildren(
+      h("div", { class: "row" },
+        h("div", {}, h("div", { class: "muted" }, "Value to me"), h("div", { class: "big " + (data.value_change >= 0 ? "good" : "bad") }, signed(data.value_change, 2))),
+        h("div", {}, h("div", { class: "muted" }, "Average category rank"), h("div", { class: "big" }, `${data.avg_rank_before} → ${data.avg_rank_after}`)),
+        h("div", {}, h("div", { class: "muted" }, `Value to ${data.partner}`), h("div", { class: "big" }, signed(data.partner_value_change, 2))),
+        mu ? h("div", {}, h("div", { class: "muted" }, "This matchup"), h("div", {}, `${mu.expected_before.toFixed(1)} → ${mu.expected_after.toFixed(1)} cats, ${Math.round(mu.p_win_before * 100)}% → ${Math.round(mu.p_win_after * 100)}%`)) : null
+      ),
+      data.warnings.map((w) => h("p", { class: "warn" }, w)),
+      table(
+        ["Cat", "Mine per game", "My rank", `${data.partner} per game`, "Their rank"],
+        data.mine.map((m, i) => {
+          const t = data.theirs[i];
+          return { cells: [m.cat, `${fmt(m.cat, m.before)} → ${fmt(m.cat, m.after)}`, rankCell(m.rank_before, m.rank_after), `${fmt(t.cat, t.before)} → ${fmt(t.cat, t.after)}`, rankCell(t.rank_before, t.rank_after)] };
+        })
+      )
+    );
+  });
+  const tt = v.trade_targets;
+  const line = (r) => h("li", {}, `${r.name} (${r.pro_team}, ${r.owner}): value ${signed(r.value, 2)}, league ${signed(r.league_value, 2)}`);
+  return card(
+    "Trade analyzer",
+    true,
+    tt && tt.buy.length ? [h("h3", {}, "Buy (worth more to you with your punt)"), h("ul", {}, tt.buy.map(line))] : null,
+    tt && tt.sell.length ? [h("h3", {}, "Sell (worth more to the league)"), h("ul", {}, tt.sell.map(line))] : null,
+    tt && tt.needs.length ? [h("h3", {}, `Help in your weakest categories (${tt.needs.join(", ")})`), h("ul", {}, tt.need_targets.slice(0, 6).map(line))] : null,
+    h("h3", {}, "Try a trade"),
+    h("div", { class: "form" },
+      h("div", { class: "field" }, h("span", {}, "You give"), h("div", { class: "picklist" }, giveBoxes.map(([, label]) => label))),
+      h("div", { class: "field" }, h("span", {}, "You get from"), partner, getList)
+    ),
+    go,
+    result
+  );
+}
+
 function renderAdvanced(v) {
   const t = v.my_team;
   if (!t) return null;
@@ -627,6 +694,7 @@ function render(view, demo) {
     renderPopular(view),
     renderStrength(view),
     renderSeason(view),
+    renderTrade(view),
     renderRankings(view),
     renderTeams(view),
     renderSettings(false),

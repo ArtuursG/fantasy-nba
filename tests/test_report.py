@@ -21,6 +21,7 @@ SECTIONS = [
     "IMPORTANT CHANGES SINCE YESTERDAY",
     "CATEGORY STRENGTH (projected, rank 1 = best)",
     "SEASON CATEGORY TOTALS (actual, rank 1 = best)",
+    "TRADE TARGETS",
     "PLAYER RANKINGS",
     "ALL TEAM ROSTERS",
     "CHANGES VS 7 DAYS AGO",

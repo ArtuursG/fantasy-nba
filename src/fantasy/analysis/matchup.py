@@ -303,18 +303,22 @@ def _record(projected: list[dict]) -> str:
     return f"{wins}-{losses}-{len(projected) - wins - losses}"
 
 
-def team_strength(ctx: Context) -> dict[int, dict]:
+def team_strength(ctx: Context, rosters: dict[int, list[int]] | None = None) -> dict[int, dict]:
     """Per-game category output of each roster's healthy, non-IR players,
-    ranked 1 (best) to N across the league."""
+    ranked 1 (best) to N across the league. `rosters` replaces some teams'
+    players (team id -> player ids), to see what a trade would do."""
     values: dict[int, dict[str, float | None]] = {}
     counted: dict[int, int] = {}
     for team in ctx.snap.teams:
+        if rosters and team.id in rosters:
+            ids = rosters[team.id]
+        else:
+            ids = [s.player_id for s in team.roster if s.slot_id != IR_SLOT]
         players = [
-            ctx.snap.players[s.player_id]
-            for s in team.roster
-            if s.slot_id != IR_SLOT
-            and s.player_id in ctx.snap.players
-            and ctx.snap.players[s.player_id].injury_status not in UNAVAILABLE_STATUSES
+            ctx.snap.players[pid]
+            for pid in ids
+            if pid in ctx.snap.players
+            and ctx.snap.players[pid].injury_status not in UNAVAILABLE_STATUSES
         ]
         totals = dict.fromkeys(COUNTING_FIELDS, 0.0)
         for player in players:

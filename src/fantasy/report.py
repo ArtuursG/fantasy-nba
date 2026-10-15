@@ -225,6 +225,7 @@ class Report:
         self.important_changes()
         self.strength()
         self.season_totals()
+        self.trade_targets()
         if not self.compact:
             self.rankings()
             self.all_rosters()
@@ -868,6 +869,32 @@ class Report:
                 ),
             )
         )
+
+    def trade_targets(self) -> None:
+        self.section("TRADE TARGETS")
+        tt = self.view.get("trade_targets")
+        if not tt:
+            self.add("My team wasn't found.")
+            return
+
+        def who(r: dict) -> str:
+            return (
+                f"{r['name']} ({r['pro_team']}, {r['positions']}, {r['owner']}): value "
+                f"{signed(r['value'], 2)}, league value {signed(r['league_value'], 2)}"
+            )
+
+        punt = self.meta["punt"]
+        if punt:
+            self.add(f"Worth more to me than to the league (punting {', '.join(punt)}): buy")
+            self.add(*(f"- {who(r)}" for r in tt["buy"]) if tt["buy"] else ["- none found"])
+            self.add("", "Worth more to the league than to me: sell")
+            self.add(*(f"- {who(r)}" for r in tt["sell"]) if tt["sell"] else ["- none found"])
+            self.add("")
+        if tt["needs"]:
+            self.add(
+                f"My weakest categories: {', '.join(tt['needs'])}. Players who add most there:"
+            )
+            self.add(*(f"- {who(r)}" for r in tt["need_targets"]))
 
     def season_totals(self) -> None:
         rows = self.view.get("season_standings")

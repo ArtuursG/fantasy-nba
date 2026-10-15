@@ -36,6 +36,7 @@ from fantasy.analysis.schedule import (
 from fantasy.analysis.simulator import simulate_moves
 from fantasy.analysis.stats import REVERSE_CATS, average, usage_proxy
 from fantasy.analysis.strategy import category_strategy, next_matchup
+from fantasy.analysis.trade import trade_targets
 from fantasy.espn.constants import (
     BENCH_SLOT,
     C_SLOT,
@@ -439,6 +440,7 @@ def build_view(
         "stream_plan": stream_plan,
         "strategy": strategy,
         "next_matchup": next_matchup(ctx, strength),
+        "trade_targets": trade_targets(ctx, strength),
         "season_standings": _season_standings(ctx),
         "acquisitions": _acquisitions(ctx, me) if me else None,
         "waiver_order": [

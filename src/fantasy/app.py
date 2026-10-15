@@ -9,6 +9,8 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from fantasy.analysis.context import Context
+from fantasy.analysis.trade import TradeError, evaluate_trade
 from fantasy.analysis.view import build_view
 from fantasy.config import (
     Config,
@@ -97,6 +99,15 @@ class FantasyApp:
         )
         self._cache = (key, view)
         return view
+
+    def evaluate_trade(self, give: list[int], get: list[int]) -> dict:
+        snapshot = self.store.latest()
+        if snapshot is None:
+            raise ConfigError("No snapshot yet: press Refresh first.")
+        try:
+            return evaluate_trade(Context.build(snapshot, self.config.punt), give, get)
+        except TradeError as exc:
+            raise ConfigError(str(exc)) from exc
 
     def settings(self) -> dict:
         config = self.config

@@ -171,6 +171,7 @@ select, input[type="search"], .field input {
 .form { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin: 12px 0; }
 .field { display: flex; flex-direction: column; gap: 4px; }
 .field span { font-weight: 600; font-size: 13px; }
+.picklist { display: flex; flex-direction: column; gap: 2px; max-height: 260px; overflow: auto; padding: 6px; border: 1px solid var(--line); border-radius: 8px; }
 
 details.team { border-top: 1px solid var(--line); padding: 8px 0; }
 details.team summary { cursor: pointer; font-weight: 600; }
