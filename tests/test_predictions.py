@@ -127,3 +127,33 @@ def test_report_shows_win_chances_simulator_and_advanced(view):
     assert "- Advanced (season): TS%" in text
     assert "## SEASON CATEGORY TOTALS (actual, rank 1 = best)" in text
     assert "-0.00" not in text
+
+
+def test_streaming_plan_uses_acquisitions_well(view, today):
+    plan = view["stream_plan"]
+    assert len(plan["steps"]) <= plan["acquisitions_left"]
+    assert plan["final"]["expected_wins"] >= plan["base"]["expected_wins"]
+    dropped = [s["drop_id"] for s in plan["steps"]]
+    added = [s["add_id"] for s in plan["steps"]]
+    assert len(dropped) == len(set(dropped))  # nobody is dropped twice
+    assert len(added) == len(set(added))
+    original = {s.player_id for s in today.team(1).roster}
+    for step in plan["steps"]:
+        assert step["gain"] >= 0.03
+        assert step["add_id"] not in original
+        assert step["drop_id"] in original or step["drop_is_streamer"]
+    assert [s["date"] for s in plan["steps"]] == sorted(s["date"] for s in plan["steps"])
+
+
+def test_streaming_plan_respects_no_acquisitions(today):
+    from fantasy.analysis.context import Context
+    from fantasy.analysis.matchup import project_side, sides_for
+    from fantasy.analysis.planner import plan_streams
+
+    ctx = Context.build(today)
+    me = ctx.my_team
+    my_side, opp_side = sides_for(ctx, me.id)
+    mine = project_side(ctx, me, my_side)
+    theirs = project_side(ctx, today.team(ctx.opponent_id(me.id)), opp_side)
+    plan = plan_streams(ctx, mine, theirs, today.free_agent_ids, 0)
+    assert plan["steps"] == [] and plan["final"] == plan["base"]

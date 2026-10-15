@@ -22,6 +22,7 @@ from fantasy.analysis.matchup import (
     sides_for,
     team_strength,
 )
+from fantasy.analysis.planner import plan_streams
 from fantasy.analysis.rankings import RANGES, default_range, rank_players
 from fantasy.analysis.roles import RoleInfo, all_roles, build_alerts, opportunities
 from fantasy.analysis.schedule import (
@@ -328,18 +329,16 @@ def build_view(
 
     matchup = None
     moves = None
+    stream_plan = None
     if me is not None and opp_id is not None and snap.team(opp_id):
         my_side, opp_side = sides_for(ctx, me.id)
         mine: SideProjection = project_side(ctx, me, my_side)
         theirs = project_side(ctx, snap.team(opp_id), opp_side)  # type: ignore[arg-type]
         matchup = analyze_matchup(ctx, mine, theirs)
-        moves = simulate_moves(
-            ctx,
-            mine,
-            theirs,
-            [r["player_id"] for r in fa_ranked if r["games_remaining"] > 0],
-            _acquisitions(ctx, me)["remaining"],
-        )
+        candidates = [r["player_id"] for r in fa_ranked if r["games_remaining"] > 0]
+        acquisitions_left = _acquisitions(ctx, me)["remaining"]
+        moves = simulate_moves(ctx, mine, theirs, candidates, acquisitions_left)
+        stream_plan = plan_streams(ctx, mine, theirs, candidates, acquisitions_left)
 
     teams = []
     for team in snap.teams:
@@ -434,6 +433,7 @@ def build_view(
         "teams": teams,
         "matchup": matchup,
         "moves": moves,
+        "stream_plan": stream_plan,
         "season_standings": _season_standings(ctx),
         "acquisitions": _acquisitions(ctx, me) if me else None,
         "waiver_order": [

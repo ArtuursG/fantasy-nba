@@ -159,6 +159,29 @@ function renderSimulator(v) {
   );
 }
 
+function renderStreamPlan(v) {
+  const plan = v.stream_plan;
+  if (!plan) return null;
+  const pctText = (x) => Math.round(x * 100) + "%";
+  if (!plan.steps.length) {
+    return card("Streaming plan", false, h("p", { class: "muted" }, plan.acquisitions_left ? "No pickup adds enough to be worth an acquisition right now." : "No acquisitions left this matchup."));
+  }
+  return card(
+    "Streaming plan",
+    true,
+    h("div", { class: "row" },
+      h("div", {}, h("div", { class: "muted" }, "Expected categories"), h("div", { class: "big" }, `${plan.base.expected_wins.toFixed(1)} → ${plan.final.expected_wins.toFixed(1)}`)),
+      h("div", {}, h("div", { class: "muted" }, "Matchup win chance"), h("div", { class: "big good" }, `${pctText(plan.base.p_win_matchup)} → ${pctText(plan.final.p_win_matchup)}`)),
+      h("div", {}, h("div", { class: "muted" }, "Usable games"), h("div", { class: "big" }, `${plan.usable_before} → ${plan.usable_after}`)),
+      h("div", {}, h("div", { class: "muted" }, "Acquisitions"), h("div", { class: "big" }, `${plan.steps.length} / ${plan.acquisitions_left}`))
+    ),
+    h("ol", {}, plan.steps.map((s) => h("li", {},
+      h("strong", {}, s.day), `: ${s.waiver ? "claim" : "add"} ${s.add} (${s.add_team}), drop ${s.drop}${s.drop_is_streamer ? " (streamer)" : ""} · ${signed(s.gain, 2)} cats · usable ${s.usable_games_added >= 0 ? "+" : ""}${s.usable_games_added}`))),
+    table(["Cat", "Now", "With plan"], plan.categories.map((c) => ({ cells: [c.cat, pctText(c.before), { node: pctText(c.after), cls: c.after > c.before + 0.02 ? "good" : c.after < c.before - 0.02 ? "bad" : "" }] }))),
+    h("p", { class: "muted" }, `Only the weakest players are dropped (${plan.droppable.join(", ")}) or streamers the plan added. Re-check daily.`)
+  );
+}
+
 function renderAdvanced(v) {
   const t = v.my_team;
   if (!t) return null;
@@ -565,6 +588,7 @@ function render(view, demo) {
     renderSchedule(view),
     renderFreeAgents(view),
     renderSimulator(view),
+    renderStreamPlan(view),
     renderAdvanced(view),
     renderTransactions(view),
     renderPopular(view),

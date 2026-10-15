@@ -215,6 +215,7 @@ class Report:
         self.transactions()
         self.free_agents()
         self.simulator()
+        self.stream_plan()
         self.opponent_changes()
         self.schedule()
         self.acquisitions()
@@ -734,6 +735,50 @@ class Report:
             )
         )
 
+    def stream_plan(self) -> None:
+        self.section("STREAMING PLAN")
+        plan = self.view.get("stream_plan")
+        if not plan:
+            self.add("No current matchup to plan for.")
+            return
+        base, final = plan["base"], plan["final"]
+        if not plan["steps"]:
+            reason = (
+                "no acquisitions left"
+                if not plan["acquisitions_left"]
+                else "no pickup adds enough to be worth an acquisition"
+            )
+            self.add(f"No moves planned: {reason}.")
+            return
+        self.add(
+            f"Using {len(plan['steps'])} of {plan['acquisitions_left']} acquisitions left: "
+            f"expected categories {base['expected_wins']:.1f} -> {final['expected_wins']:.1f}, "
+            f"matchup win chance {base['p_win_matchup'] * 100:.0f}% -> "
+            f"{final['p_win_matchup'] * 100:.0f}%, "
+            f"usable games {plan['usable_before']} -> {plan['usable_after']}. Only the weakest "
+            f"players are dropped ({', '.join(plan['droppable'])}) or streamers the plan added. "
+            "Re-check daily: injuries and new free agents change it.",
+            "",
+        )
+        for i, step in enumerate(plan["steps"], 1):
+            how = "claim on waivers" if step["waiver"] else "add"
+            self.add(
+                f"{i}. {step['day']}: {how} {step['add']} ({step['add_team']}), drop "
+                f"{step['drop']}{' (streamer)' if step['drop_is_streamer'] else ''}: "
+                f"{signed(step['gain'], 2)} expected categories, usable games "
+                f"{step['usable_games_added']:+d}"
+            )
+        self.add("", "Category odds before -> after the plan:", "")
+        self.add(
+            *table(
+                ["Cat", "Now", "With plan"],
+                (
+                    [c["cat"], f"{c['before'] * 100:.0f}%", f"{c['after'] * 100:.0f}%"]
+                    for c in plan["categories"]
+                ),
+            )
+        )
+
     def season_totals(self) -> None:
         rows = self.view.get("season_standings")
         if not rows:
@@ -1174,6 +1219,8 @@ class Report:
             "reach a 70% chance, with the same per remaining usable game.",
             "- Add/drop simulator: the rest of the matchup re-projected with the pickup in place "
             "of the drop; season value is the difference in per-game value.",
+            "- Streaming plan: greedy over the acquisitions left; each pickup starts on his "
+            "first game day and the dropped player keeps his games until the day before.",
             "- Game-to-game value: each recent game scored like the rankings; spread is the "
             "standard deviation, floor and ceiling the 20th and 80th percentile, bad games "
             "below -0.5.",
