@@ -20,6 +20,19 @@ STAT_COLUMNS = [
     ("PTS", "pts"),
 ]
 DETAILED_FREE_AGENTS = 15
+RANKING_ROUNDS = 13
+# Short names for the per-category value columns.
+VALUE_LABELS = {
+    "PTS": "pV",
+    "3PM": "3V",
+    "REB": "rV",
+    "AST": "aV",
+    "STL": "sV",
+    "BLK": "bV",
+    "FG%": "fg%V",
+    "FT%": "ft%V",
+    "TO": "toV",
+}
 
 
 def num(value: Any, digits: int = 1) -> str:
@@ -113,6 +126,22 @@ def availability(row: dict) -> str:
     return "FA"
 
 
+def value_text(row: dict, punt: list[str]) -> str:
+    """'+0.45 (league +0.30), rank #12' for a player row."""
+    text = signed(row.get("value"), 2)
+    if punt:
+        text += f" (league {signed(row.get('league_value'), 2)})"
+    if row.get("rank"):
+        text += f", rank #{row['rank']}"
+    return text
+
+
+def cat_values_text(values: dict[str, float], punt: list[str]) -> str:
+    return " | ".join(
+        f"{cat} {signed(v, 2)}{' (punted)' if cat in punt else ''}" for cat, v in values.items()
+    )
+
+
 def health_text(row: dict) -> str:
     text = row["health"]
     if row.get("expected_return") and row["injury_status"] not in ("ACTIVE", "NORMAL"):
@@ -148,6 +177,7 @@ class Report:
         self.important_changes()
         self.strength()
         if not self.compact:
+            self.rankings()
             self.all_rosters()
             self.week_changes()
         self.popular()
@@ -190,6 +220,12 @@ class Report:
             f"Waivers: {rules['waiver_days']} day | Max {rules['acquisition_limit']} acquisitions "
             "per matchup | Daily lineup changes",
         )
+        if m["punt"]:
+            self.add(
+                f"Strategy: punting {', '.join(m['punt'])}. Player values and rankings leave "
+                f"{'it' if len(m['punt']) == 1 else 'them'} out; the matchup section still "
+                "covers every category."
+            )
 
     def my_roster(self) -> None:
         self.section("MY ROSTER")
@@ -219,6 +255,8 @@ class Report:
                     *stat_cells(line),
                     r["games_remaining"],
                     r["usable_remaining"] if r["usable_remaining"] is not None else "-",
+                    signed(r["value"], 2),
+                    r["rank"] or "-",
                 ]
             )
         self.add(
@@ -237,6 +275,8 @@ class Report:
                     *(label for label, _ in STAT_COLUMNS),
                     "Games left",
                     "Usable",
+                    "Value",
+                    "Rank",
                 ],
                 rows,
             )
@@ -267,14 +307,19 @@ class Report:
         )
         if not r["season"] and r["projected"]:
             self.add(f"- ESPN projection: {line_text(r['projected'], with_gp=False)}")
+        punt = self.meta["punt"]
+        self.add(
+            f"- Value: {value_text(r, punt)} | per category: "
+            f"{cat_values_text(r['cat_values'], punt)}"
+        )
         if r["last5_games"]:
             self.add("- Last 5 games: " + "; ".join(game_text(g) for g in r["last5_games"]))
-        usage = num(r["usage_proxy"])
+        usage = f"usage proxy {num(r['usage_proxy'])}"
         if r["usage_proxy_last5"] is not None:
             usage += f" (last 5: {num(r['usage_proxy_last5'])})"
         self.add(
             f"- Minutes last 5: {minutes_list(r['last5_min'])} | Starts last 5: "
-            f"{r['last5_starts']}/{len(r['last5_min'])} | Usage proxy: {usage}",
+            f"{r['last5_starts']}/{len(r['last5_min'])} | {usage}",
             f"- Role: {r['role']} | Trend: {r['trend']}"
             + (
                 f" ({signed(r['min_delta'])} MIN vs {r['baseline_label']})"
@@ -426,6 +471,7 @@ class Report:
                 + (f" ({signed(r['min_delta'])} MIN)" if r["min_delta"] is not None else ""),
                 f"   Usable games this matchup: {r['usable_remaining']} of {r['games_remaining']}"
                 + (f" ({', '.join(r['usable_days'])})" if r["usable_days"] else ""),
+                f"   Value: {value_text(r, self.meta['punt'])}",
                 f"   Why: {'; '.join(r['reasons']) or 'value'}",
             )
         rest = fas[DETAILED_FREE_AGENTS:]
@@ -448,6 +494,7 @@ class Report:
                         minutes_list(r["last5_min"]),
                         r["trend"],
                         *stat_cells(line),
+                        signed(r["value"], 2),
                         r["usable_remaining"],
                         "; ".join(r["reasons"][:2]),
                     ]
@@ -469,6 +516,7 @@ class Report:
                         "FG%",
                         "FT%",
                         *(label for label, _ in STAT_COLUMNS),
+                        "Value",
                         "Usable",
                         "Why",
                     ],
@@ -480,7 +528,17 @@ class Report:
             self.add("", "### Streaming targets (games on days with an open starting slot)", "")
             self.add(
                 *table(
-                    ["Player", "Team", "Pos", "Health", "Usable", "Games left", "Days", "MIN"],
+                    [
+                        "Player",
+                        "Team",
+                        "Pos",
+                        "Health",
+                        "Usable",
+                        "Games left",
+                        "Days",
+                        "MIN",
+                        "Value",
+                    ],
                     (
                         [
                             r["name"],
@@ -491,6 +549,7 @@ class Report:
                             r["games_remaining"],
                             ", ".join(r["usable_days"]),
                             num(r["projected_min"]),
+                            signed(r["value"], 2),
                         ]
                         for r in streamers
                     ),
@@ -531,10 +590,12 @@ class Report:
         )
         self.roster_table(opp["roster"])
 
-    def roster_table(self, roster: list[dict]) -> None:
+    def roster_table(self, roster: list[dict], slim: bool = False) -> None:
+        """A fantasy roster; `slim` leaves the per-game stats to PLAYER RANKINGS."""
         rows = []
         for r in roster:
             line, mark = stats_source(r)
+            stats = [] if slim else stat_cells(line)
             rows.append(
                 [
                     r["name"] + mark,
@@ -542,14 +603,17 @@ class Report:
                     r["positions"],
                     r["slot"] or "-",
                     health_text(r),
+                    signed(r["value"], 2),
+                    r["rank"] or "-",
                     num(line["min"] if line else None),
                     minutes_list(r["last5_min"]),
                     r["trend"],
-                    *stat_cells(line),
+                    *stats,
                     num(r["roster_pct"]),
                     r["games_remaining"],
                 ]
             )
+        stat_headers = [] if slim else ["FG%", "FT%", *(label for label, _ in STAT_COLUMNS)]
         self.add(
             *table(
                 [
@@ -558,12 +622,12 @@ class Report:
                     "Pos",
                     "Slot",
                     "Health",
+                    "Value",
+                    "Rank",
                     "MIN",
                     "Last5 MIN",
                     "Trend",
-                    "FG%",
-                    "FT%",
-                    *(label for label, _ in STAT_COLUMNS),
+                    *stat_headers,
                     "Ros%",
                     "Games left",
                 ],
@@ -726,6 +790,96 @@ class Report:
                 f"{', '.join(c for c, _ in by_rank[-3:])}"
             )
 
+    def rankings(self) -> None:
+        rankings = self.view["rankings"]
+        key = rankings["default"]
+        label = next(r["label"] for r in rankings["ranges"] if r["key"] == key)
+        self.section("PLAYER RANKINGS")
+        rows = rankings["rows"][key]
+        if not rows:
+            self.add("No player stats to rank yet.")
+            return
+        punt = self.meta["punt"]
+        teams = self.meta["teams"]
+        cats = rankings["categories"]
+        self.add(
+            f"Range: {label} | top {RANKING_ROUNDS} rounds ({RANKING_ROUNDS * teams} players) by "
+            + ("punt value" if punt else "value")
+            + ". Values are per-game z-scores against the rostered players (about +1 for a "
+            "first-rounder, 0 at the edge of rosterable)."
+            + (
+                f" Punting {', '.join(punt)}: Value leaves it out, LeagV counts it." if punt else ""
+            ),
+            "Owner: ME = my team, OPP = current opponent, team abbreviations: "
+            + ", ".join(f"{t['abbrev']} = {t['name']}" for t in self.view["teams"] if t["abbrev"])
+            + ". USG is the usage proxy, (FGA + 0.44 FTA + TO) per 36 minutes.",
+            "",
+        )
+        value_heads = ["Value", "LeagV", "Punt+"] if punt else ["Value"]
+        headers = [
+            "Rnd",
+            "Rank",
+            *value_heads,
+            "Name",
+            "Team",
+            "Pos",
+            "Owner",
+            "Inj",
+            "G",
+            "MIN",
+            "PTS",
+            "3PM",
+            "REB",
+            "AST",
+            "STL",
+            "BLK",
+            "FG%",
+            "FGA",
+            "FT%",
+            "FTA",
+            "TO",
+            "USG",
+            *(VALUE_LABELS.get(c, c) for c in cats),
+            "L15 Value",
+        ]
+        body = []
+        for r in rows[: RANKING_ROUNDS * teams]:
+            values = [signed(r["value"], 2)]
+            if punt:
+                values += [
+                    signed(r["league_value"], 2),
+                    signed(r["value"] - r["league_value"], 2),
+                ]
+            body.append(
+                [
+                    r["round"],
+                    r["rank"],
+                    *values,
+                    r["name"],
+                    r["pro_team"],
+                    r["positions"],
+                    r["owner_short"],
+                    r["injury"] or "-",
+                    r["gp"],
+                    num(r["min"]),
+                    num(r["pts"]),
+                    num(r["tpm"]),
+                    num(r["reb"]),
+                    num(r["ast"]),
+                    num(r["stl"]),
+                    num(r["blk"]),
+                    pct(r["fg_pct"]),
+                    num(r["fga"]),
+                    pct(r["ft_pct"]),
+                    num(r["fta"]),
+                    num(r["to"]),
+                    num(r["usage_proxy"]),
+                    *(signed(r["values"].get(c), 2) for c in cats),
+                    signed(r.get("last15_value"), 2),
+                ]
+            )
+        self.add(*table(headers, body))
+
     def all_rosters(self) -> None:
         self.section("ALL TEAM ROSTERS")
         for t in self.view["teams"]:
@@ -740,7 +894,7 @@ class Report:
                 f"(usable {t['usable_remaining']})",
                 "",
             )
-            self.roster_table(t["roster"])
+            self.roster_table(t["roster"], slim=True)
             self.add("")
 
     def week_changes(self) -> None:
@@ -795,6 +949,10 @@ class Report:
             "- Role trend: last-5 minutes vs the 10 games before (or season average); 4+ MIN is "
             "UP/DOWN. Expected minutes from an injured teammate are an estimate.",
             "- Roster % and its change are across all ESPN leagues.",
+            "- Value: average per-game z-score against the rostered players, percentages "
+            "weighted by attempts and turnovers counted against; about +1 is a first-round "
+            "player, 0 the edge of rosterable. Rank is by value in the PLAYER RANKINGS range; "
+            "L15 Value uses the last 15 days.",
         )
         for warning in self.meta["warnings"]:
             self.add(f"- Warning: {warning}")

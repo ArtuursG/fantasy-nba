@@ -65,3 +65,47 @@ def test_config_values():
         load_config({"ESPN_LEAGUE_ID": "abc"})
     with pytest.raises(ConfigError):
         load_config({"FANTASY_TZ": "Mars/Base"})
+
+
+def test_punt_and_league_url_settings():
+    from fantasy.config import parse_league_url, parse_punt
+
+    assert parse_punt("to, FT ;3") == ("TO", "FT%", "3PM")
+    assert parse_punt("") == ()
+    with pytest.raises(ConfigError):
+        parse_punt("TO, DUNKS")
+    url = "https://fantasy.espn.com/basketball/team?leagueId=987654&teamId=3&seasonId=2027"
+    assert parse_league_url(url) == {"league_id": 987654, "team_id": 3, "season": 2027}
+    config = load_config({"ESPN_LEAGUE_URL": url, "FANTASY_DATA_DIR": "/tmp/x"})
+    assert (config.league_id, config.season, config.team) == (987654, 2027, "3")
+    named = load_config({"ESPN_LEAGUE_URL": url, "FANTASY_TEAM": "Bullu Kojas"})
+    assert named.team == "Bullu Kojas"
+
+
+def test_settings_are_saved_to_dev_vars(env, monkeypatch):
+    import os
+
+    from fantasy.app import FantasyApp
+    from fantasy.config import SETTINGS_KEYS
+
+    for key in SETTINGS_KEYS:
+        monkeypatch.delenv(key, raising=False)
+    dev_vars = env / ".dev.vars"
+    dev_vars.write_text("# mine\nFANTASY_TZ=Europe/Riga\nESPN_LEAGUE_ID=1\n", encoding="utf-8")
+    app = FantasyApp(load_config())
+    url = "https://fantasy.espn.com/basketball/league?leagueId=555&teamId=7"
+    settings = app.update_settings(
+        {"league_url": url, "espn_s2": "AEB%2Fs2", "swid": "ABC", "team": "", "punt": "to"}
+    )
+    assert settings["league_id"] == 555 and settings["team"] == "7"
+    assert settings["has_espn_s2"] and settings["has_swid"] and settings["punt"] == ["TO"]
+    text = dev_vars.read_text(encoding="utf-8")
+    assert "# mine" in text and "FANTASY_TZ=Europe/Riga" in text
+    assert "ESPN_LEAGUE_ID=\n" in text and f"ESPN_LEAGUE_URL={url}" in text
+    assert os.environ["ESPN_S2"] == "AEB%2Fs2"
+
+    # blank cookie fields keep what is saved
+    app.update_settings({"espn_s2": "", "punt": ""})
+    assert app.config.espn_s2 == "AEB%2Fs2" and app.config.punt == ()
+    with pytest.raises(ConfigError):
+        app.update_settings({"league_url": "https://fantasy.espn.com/basketball/players/add"})

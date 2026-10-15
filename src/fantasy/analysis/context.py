@@ -15,6 +15,16 @@ from fantasy.timeutil import parse_iso
 MIN_POOL = 60
 
 
+def value_pool(snap: Snapshot, lines: dict[int, StatLine]) -> list[int]:
+    """Players z-scores are measured against: everyone rostered, or before
+    the draft the most owned players, as many as the league rosters."""
+    rostered = [s.player_id for t in snap.teams for s in t.roster if s.player_id in lines]
+    if len(rostered) >= MIN_POOL:
+        return rostered
+    candidates = sorted(lines, key=lambda pid: snap.players[pid].percent_owned or 0.0, reverse=True)
+    return candidates[: max(MIN_POOL, 13 * max(snap.league.size, 1))]
+
+
 @dataclass
 class Context:
     snap: Snapshot
@@ -24,18 +34,15 @@ class Context:
     lines: dict[int, StatLine]
     valuation: Valuation
     values: dict[int, float]
+    punt: tuple[str, ...] = ()
 
     @classmethod
-    def build(cls, snap: Snapshot) -> Context:
+    def build(cls, snap: Snapshot, punt: tuple[str, ...] = ()) -> Context:
+        """`values` (used to order lineups and rank free agents) leave out
+        punted categories; matchup odds still cover every category."""
         lines = {pid: projection_line(p) for pid, p in snap.players.items()}
-        rostered = [s.player_id for t in snap.teams for s in t.roster]
-        if len(rostered) < MIN_POOL:
-            by_owned = sorted(
-                snap.players.values(), key=lambda p: p.percent_owned or 0.0, reverse=True
-            )
-            rostered = [p.id for p in by_owned[: max(MIN_POOL, 13 * max(snap.league.size, 1))]]
         valuation = Valuation.from_pool(
-            [lines[pid] for pid in rostered if pid in lines], snap.league.categories
+            [lines[pid] for pid in value_pool(snap, lines)], snap.league.categories
         )
         return cls(
             snap=snap,
@@ -44,7 +51,8 @@ class Context:
             sps=matchup_sps(snap),
             lines=lines,
             valuation=valuation,
-            values={pid: valuation.score(line) for pid, line in lines.items()},
+            values={pid: valuation.score(line, punt) for pid, line in lines.items()},
+            punt=punt,
         )
 
     @property

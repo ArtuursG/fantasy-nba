@@ -1,4 +1,4 @@
-# fantasy
+# fantasy-nba-report
 
 A daily snapshot of an ESPN Fantasy Basketball league, written out as one
 structured report to paste into ChatGPT. It collects what a manager needs to
@@ -18,9 +18,15 @@ uv run fantasy serve
 
 This opens the dashboard at http://localhost:8765. Press **Refresh** (it reads
 the league from ESPN and saves today's snapshot), then **COPY DAILY FANTASY
-REPORT**, and paste the report into ChatGPT. **Compact** leaves out the other
-teams' full rosters and free agents 16-50 when a shorter paste is wanted (about
-40k instead of 70k characters).
+REPORT**, and paste the report into ChatGPT. **Compact** leaves out the player
+rankings, the other teams' rosters and free agents 16-50 when a shorter paste
+is wanted (about 45k instead of 100k characters).
+
+The dashboard also has a **Player rankings** table: every rostered player and
+free agent with per-game stats and a value for each category, for the full
+season, the last 30, 15 or 7 days, or the projection. It filters by free
+agents, your team, rostered players or position, and ticking a category under
+*Punt* re-ranks everyone without it.
 
 Without the browser:
 
@@ -40,20 +46,34 @@ Requirements: [uv](https://docs.astral.sh/uv/) (Python 3.12+).
 ```bash
 cd fantasy-nba-report
 uv sync
-cp .dev.vars.example .dev.vars
+uv run fantasy serve
 ```
 
-Fill in `.dev.vars` (gitignored; real environment variables win):
+Open **League settings** at the bottom of the dashboard and fill in:
+
+- **League or team page URL**: open your team on fantasy.espn.com and copy the
+  address from the browser. It carries `leagueId`, `teamId` and `seasonId`, so
+  the league, your team and the season all come from it.
+- **espn_s2** and **SWID**: two cookies, see below.
+- **Punt categories**, if you punt any (for example `TO`).
+
+Saving writes them to `.dev.vars` in this folder (gitignored). The same
+settings can be put in that file by hand (`cp .dev.vars.example .dev.vars`);
+real environment variables win over it:
 
 | Variable | Value |
 | --- | --- |
-| `ESPN_LEAGUE_ID` | The `leagueId=` number in the league's URL |
+| `ESPN_LEAGUE_URL` | Any league or team page URL; league, team and season are read from it |
+| `ESPN_LEAGUE_ID` | The `leagueId=` number in the league's URL (instead of the URL) |
 | `ESPN_SEASON` | Optional. The year the NBA season ends (2026-27 is `2027`); derived from today's date when empty |
 | `ESPN_S2`, `ESPN_SWID` | Cookies for a private league, see below |
 | `FANTASY_TEAM` | Your team's name, abbreviation or id. Default `Rembates Hektors IR` |
+| `FANTASY_PUNT` | Categories you punt, comma-separated (`TO`, `TO,FT%`). Optional |
 | `FANTASY_TZ` | Timezone for report times. Default `Europe/Riga` |
 
-`ESPN_S2` and `ESPN_SWID` come from the browser while logged in to
+ESPN has no API key for fantasy leagues. A private league is read with the
+same two cookies the ESPN website uses, which is also how other fantasy tools
+connect to ESPN. They come from the browser while logged in to
 fantasy.espn.com: open the developer tools (F12), go to Application (Chrome,
 Edge) or Storage (Firefox), then Cookies, `https://fantasy.espn.com`, and copy
 the values of `espn_s2` and `SWID` (with its curly braces). They last for
@@ -92,7 +112,8 @@ Same sections in the same order every day:
 10. **Waiver order**.
 11. **Important changes since yesterday**: the headlines, my team first.
 12. **Category strength**: every team's rank 1-10 in each category.
-13. **All team rosters**, **changes vs 7 days ago**, **most rostered free agents** and **data notes**.
+13. **Player rankings**: the top 13 rounds by value, with owner, per-game stats, usage proxy, each category's value and the last-15-days value.
+14. **All team rosters** (with each player's value and rank), **changes vs 7 days ago**, **most rostered free agents** and **data notes**.
 
 ## How the numbers are worked out
 
@@ -101,6 +122,7 @@ Same sections in the same order every day:
 - **Matchup projection**: current ESPN category totals plus each starter's projection line for every remaining usable game. Win odds treat the remaining output as random (counting stats over-dispersed Poisson, percentages binomial on the attempts left); 70% or more is a likely win, 30% or less a likely loss. ESPN's matchup data has percentages but not attempts, so attempts so far are estimated from the lineups played.
 - **Category strength**: per-game projection totals of each roster's healthy non-IR players, ranked across the league (TO ranked low-is-best).
 - **Role trend**: average minutes in the last 5 games against the 10 before (or the season average); 4 or more minutes is UP or DOWN. A starter is someone who started 3 of the last 5. A return from injury is 3 or more missed team games followed by 1-3 games back.
+- **Player value**: for each category, a per-game z-score against the rostered players (percentages weighted by attempts, so a high-volume shooter moves FG% more; turnovers count against). A player's value is the average over the categories, about +1 for a first-round player and 0 at the edge of what's rostered. With punt categories set, value averages only the others ("LeagV" keeps all of them), and lineups and free agents are ranked by that value; the matchup section still covers every category.
 - **Free-agent interest**: a 9-cat z-score of the projection line, plus recent form, minutes trend, a new starting job, an injured teammate at his position, a return from injury, the add rate and usable games, minus a penalty while he's out.
 
 ## History
@@ -147,7 +169,7 @@ the invented demo league.
 | `src/fantasy/espn/` | ESPN client (`fetch_bundle`) and parser into a snapshot |
 | `src/fantasy/models.py` | The normalised snapshot |
 | `src/fantasy/store.py` | Snapshot history in SQLite |
-| `src/fantasy/analysis/` | Schedule and lineups, matchup, roles, free agents, changes, and `view.py`, which assembles them |
+| `src/fantasy/analysis/` | Schedule and lineups, matchup, roles, free agents, rankings, changes, and `view.py`, which assembles them |
 | `src/fantasy/report.py` | The Markdown report |
 | `src/fantasy/web/` | Local dashboard (standard library server, one page) |
 | `src/fantasy/demo.py` | The invented league used by `--demo` and the tests |

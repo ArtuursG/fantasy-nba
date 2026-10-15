@@ -67,3 +67,25 @@ def test_live_refresh_without_league_id_reports_the_setting(tmp_path):
     finally:
         httpd.shutdown()
         httpd.server_close()
+
+
+def test_settings_endpoint_never_returns_cookies(server, tmp_path, monkeypatch):
+    from fantasy.config import SETTINGS_KEYS
+
+    for key in SETTINGS_KEYS:
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setattr("fantasy.config.PROJECT_DIR", tmp_path)
+    assert httpx.get(server + "/api/settings").json()["has_espn_s2"] is False
+    response = httpx.post(
+        server + "/api/settings",
+        json={
+            "league_url": "https://fantasy.espn.com/basketball/team?leagueId=42&teamId=1",
+            "espn_s2": "secret-cookie",
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["settings"]["league_id"] == 42
+    assert "secret-cookie" not in response.text
+    assert "secret-cookie" not in httpx.get(server + "/api/settings").text
+    bad = httpx.post(server + "/api/settings", json={"punt": "DUNKS"})
+    assert bad.status_code == 400 and "FANTASY_PUNT" in bad.json()["error"]

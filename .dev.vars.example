@@ -1,7 +1,12 @@
 # Copy to .dev.vars (gitignored) and fill in. Real environment
 # variables win over this file.
 
-# From the league URL: fantasy.espn.com/basketball/league?leagueId=<this>
+# Your team's page on fantasy.espn.com, copied from the browser. League,
+# team and season are read from it (leagueId, teamId, seasonId).
+ESPN_LEAGUE_URL=
+
+# Or set the league id on its own:
+# fantasy.espn.com/basketball/league?leagueId=<this>
 ESPN_LEAGUE_ID=
 
 # Season ESPN files the league under: the year the NBA season ends
@@ -12,8 +17,13 @@ ESPN_SEASON=
 ESPN_S2=
 ESPN_SWID=
 
-# Your team: its name, abbreviation or numeric team id.
+# Your team: its name, abbreviation or numeric team id. When empty, the
+# teamId in ESPN_LEAGUE_URL is used.
 FANTASY_TEAM=Rembates Hektors IR
+
+# Categories you punt, comma-separated (TO, or TO,FT%). Player values and
+# rankings leave them out.
+FANTASY_PUNT=
 
 # Timezone for report dates and timestamps.
 FANTASY_TZ=Europe/Riga

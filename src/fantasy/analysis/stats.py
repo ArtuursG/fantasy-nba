@@ -137,8 +137,17 @@ class Valuation:
             scores[cat] = -z if cat in REVERSE_CATS else z
         return scores
 
-    def score(self, line: StatLine) -> float:
+    def score(self, line: StatLine, punt: tuple[str, ...] = ()) -> float:
+        """Summed z-scores over the categories not punted."""
+        counted = [c for c in self.params if c not in punt]
         if line.min <= 0 and line.pts <= 0:
             # No stats at all: one standard deviation below average everywhere.
-            return -float(len(self.params))
-        return sum(self.by_cat(line).values())
+            return -float(len(counted))
+        scores = self.by_cat(line)
+        return sum(scores[c] for c in counted)
+
+    def mean(self, line: StatLine, punt: tuple[str, ...] = ()) -> float:
+        """Average z-score per category: about +1 for a first-round player,
+        0 at the edge of the rosterable pool."""
+        counted = [c for c in self.params if c not in punt]
+        return self.score(line, punt) / len(counted) if counted else 0.0

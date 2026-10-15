@@ -20,6 +20,7 @@ from fantasy.config import ConfigError
 from fantasy.espn.client import EspnError
 
 STATIC = Path(__file__).parent / "static"
+MAX_BODY = 8 * 1024 * 1024
 STATIC_FILES = {
     "index.html": "text/html; charset=utf-8",
     "app.js": "text/javascript; charset=utf-8",
@@ -68,6 +69,8 @@ def make_handler(app: FantasyApp, allowed_hosts: set[str]) -> type[BaseHTTPReque
                 self._send(200, (STATIC / name).read_bytes(), STATIC_FILES[name])
             elif path == "/api/state":
                 self._json(200, {"view": app.view(), "demo": app.demo})
+            elif path == "/api/settings":
+                self._json(200, app.settings())
             elif path == "/api/report":
                 compact = parse_qs(url.query).get("compact") == ["1"]
                 text = app.report(compact=compact)
@@ -85,17 +88,31 @@ def make_handler(app: FantasyApp, allowed_hosts: set[str]) -> type[BaseHTTPReque
             if origin and origin.split("://", 1)[-1] not in allowed_hosts:
                 self._send(403, b"Cross-site request refused", "text/plain; charset=utf-8")
                 return
-            if urlsplit(self.path).path != "/api/refresh":
-                self._send(404, b"Not found", "text/plain; charset=utf-8")
+            path = urlsplit(self.path).path
+            length = int(self.headers.get("Content-Length") or 0)
+            if length > MAX_BODY:
+                self._send(413, b"Too large", "text/plain; charset=utf-8")
                 return
+            body = self.rfile.read(length) if length else b""
             try:
-                app.refresh(log=lambda _msg: None)
-                self._json(200, {"view": app.view(), "demo": app.demo})
+                if path == "/api/refresh":
+                    app.refresh(log=lambda _msg: None)
+                    self._json(200, {"view": app.view(), "demo": app.demo})
+                elif path == "/api/settings":
+                    form = json.loads(body or b"{}")
+                    if not isinstance(form, dict):
+                        raise ConfigError("Settings must be a JSON object")
+                    settings = app.update_settings({k: str(v) for k, v in form.items()})
+                    self._json(200, {"settings": settings, "view": app.view()})
+                else:
+                    self._send(404, b"Not found", "text/plain; charset=utf-8")
+            except json.JSONDecodeError:
+                self._json(400, {"error": "Settings must be JSON"})
             except (ConfigError, EspnError) as exc:
                 self._json(400, {"error": str(exc)})
             except Exception as exc:  # the page should show it, not hang
                 traceback.print_exc()
-                self._json(500, {"error": f"Refresh failed: {exc}"})
+                self._json(500, {"error": f"Request failed: {exc}"})
 
     return Handler
 

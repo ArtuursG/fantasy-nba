@@ -20,6 +20,7 @@ from fantasy.analysis.matchup import (
     sides_for,
     team_strength,
 )
+from fantasy.analysis.rankings import RANGES, default_range, rank_players
 from fantasy.analysis.roles import RoleInfo, all_roles, build_alerts, opportunities
 from fantasy.analysis.schedule import (
     DayPlan,
@@ -146,7 +147,11 @@ def player_row(
         ),
         "game_days": [day_label(date.fromisoformat(g.date)) for g in remaining],
         "b2b": back_to_backs([date.fromisoformat(g.date) for g in games]),
-        "value": round(ctx.values.get(player.id, 0.0), 2),
+        "value": round(ctx.valuation.mean(ctx.lines[player.id], ctx.punt), 2),
+        "league_value": round(ctx.valuation.mean(ctx.lines[player.id]), 2),
+        "cat_values": {
+            cat: round(z, 2) for cat, z in ctx.valuation.by_cat(ctx.lines[player.id]).items()
+        },
         "pool_status": player.pool_status,
         "waiver_clear": player.waiver_clear,
         "waiver_clear_estimated": player.waiver_clear_estimated,
@@ -284,9 +289,10 @@ def build_view(
     prev: Snapshot | None = None,
     week_ago: Snapshot | None = None,
     tz: ZoneInfo | None = None,
+    punt: tuple[str, ...] = (),
 ) -> dict:
     tz = tz or ZoneInfo("Europe/Riga")
-    ctx = Context.build(snap)
+    ctx = Context.build(snap, punt)
     roles = all_roles(ctx)
     opps = opportunities(ctx, roles)
     league = snap.league
@@ -344,6 +350,29 @@ def build_view(
             }
         )
 
+    ranking_rows: dict[str, list[dict]] = {}
+    ranking_cats: list[str] = []
+    for key, _label in RANGES:
+        rows, cats = rank_players(ctx, key)
+        ranking_rows[key] = rows
+        ranking_cats = ranking_cats or cats
+    ranking_range = default_range(ctx)
+    rank_by_id = {r["id"]: r["rank"] for r in ranking_rows[ranking_range]}
+    recent_value = {r["id"]: r["value"] for r in ranking_rows["last15"]}
+    for row in ranking_rows[ranking_range]:
+        row["last15_value"] = recent_value.get(row["id"])
+    free_agent_rows = [fa_row(item) for item in top_fa]
+    streamer_rows = [
+        fa_row(item)
+        for item in sorted(
+            (r for r in fa_ranked if r["usable"] > 0),
+            key=lambda r: (r["usable"], r["score"]),
+            reverse=True,
+        )[:10]
+    ]
+    for row in [r for t in teams for r in t["roster"]] + free_agent_rows + streamer_rows:
+        row["rank"] = rank_by_id.get(row["id"])
+
     prev_at = parse_iso(prev.fetched_at).astimezone(tz) if prev else None
     week_at = parse_iso(week_ago.fetched_at).astimezone(tz) if week_ago else None
     first, last = ctx.calendar.date_of(ctx.sps[0]), ctx.calendar.date_of(ctx.sps[-1])
@@ -375,6 +404,7 @@ def build_view(
             "week_ago": week_at.strftime("%Y-%m-%d %H:%M") if week_at else None,
             "demo": snap.demo,
             "warnings": snap.warnings,
+            "punt": list(ctx.punt),
             "rules": {
                 "lineup": _lineup_text(league.lineup_slots),
                 "c_limit": league.c_limit,
@@ -395,7 +425,7 @@ def build_view(
             for t in sorted(snap.teams, key=lambda t: t.waiver_rank or 99)
         ],
         "transactions": _transactions(ctx, prev),
-        "free_agents": [fa_row(item) for item in top_fa],
+        "free_agents": free_agent_rows,
         "popular_free_agents": [
             {
                 "name": snap.players[pid].name,
@@ -413,14 +443,16 @@ def build_view(
                 reverse=True,
             )[:10]
         ],
-        "streamers": [
-            fa_row(item)
-            for item in sorted(
-                (r for r in fa_ranked if r["usable"] > 0),
-                key=lambda r: (r["usable"], r["score"]),
-                reverse=True,
-            )[:10]
-        ],
+        "streamers": streamer_rows,
+        "rankings": {
+            "default": ranking_range,
+            "ranges": [
+                {"key": key, "label": label, "players": len(ranking_rows[key])}
+                for key, label in RANGES
+            ],
+            "categories": ranking_cats,
+            "rows": ranking_rows,
+        },
         "alerts": build_alerts(ctx, roles, opps, prev, alert_ids),
         "schedule": {
             "days": days,

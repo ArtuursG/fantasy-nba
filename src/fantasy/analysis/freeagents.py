@@ -90,12 +90,13 @@ def rank_free_agents(
         if usable:
             days = ", ".join(day_label(p.date)[:3] for p in usable)
             reasons.append(f"{len(usable)} usable games left ({days})")
-        # Few turnovers mostly means few minutes, so TO doesn't count as a strength.
+        # Few turnovers mostly means few minutes, so TO doesn't count as a
+        # strength; punted categories don't either.
         strong = sorted(
             (
                 (z, cat)
                 for cat, z in ctx.valuation.by_cat(ctx.lines[player_id]).items()
-                if z >= STRONG_Z and cat != "TO"
+                if z >= STRONG_Z and cat != "TO" and cat not in ctx.punt
             ),
             reverse=True,
         )[:3]
