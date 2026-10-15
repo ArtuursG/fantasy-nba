@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fantasy Daily</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="title">
+      <h1>Fantasy Daily</h1>
+      <p id="subtitle" class="muted">No snapshot yet</p>
+    </div>
+    <div class="actions">
+      <button id="refresh" type="button">Refresh</button>
+      <button id="copy" type="button" class="primary" disabled>COPY DAILY FANTASY REPORT</button>
+      <label class="toggle"><input id="compact" type="checkbox"> Compact</label>
+    </div>
+  </header>
+  <div id="status" class="status" role="status" aria-live="polite"></div>
+  <div id="demo-banner" class="banner" hidden>Demo data: an invented league, not your ESPN league.</div>
+
+  <main id="app">
+    <section class="card empty" id="empty">
+      <h2>Start here</h2>
+      <p>Press <strong>Refresh</strong> to read your league from ESPN and save today's snapshot.
+        Then press <strong>COPY DAILY FANTASY REPORT</strong> and paste it into ChatGPT.</p>
+    </section>
+  </main>
+
+  <details class="card preview" id="preview-card" hidden>
+    <summary>Report preview</summary>
+    <textarea id="report-text" readonly spellcheck="false" aria-label="Daily report text"></textarea>
+  </details>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

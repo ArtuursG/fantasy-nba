@@ -1,0 +1,19 @@
+# Copy to .dev.vars (gitignored) and fill in. Real environment
+# variables win over this file.
+
+# From the league URL: fantasy.espn.com/basketball/league?leagueId=<this>
+ESPN_LEAGUE_ID=
+
+# Season ESPN files the league under: the year the NBA season ends
+# (2026-27 is 2027). Leave empty to derive it from today's date.
+ESPN_SEASON=
+
+# Private leagues need both browser cookies from espn.com (see README).
+ESPN_S2=
+ESPN_SWID=
+
+# Your team: its name, abbreviation or numeric team id.
+FANTASY_TEAM=Rembates Hektors IR
+
+# Timezone for report dates and timestamps.
+FANTASY_TZ=Europe/Riga

@@ -1,0 +1,278 @@
+"""The current head-to-head matchup: score now, projected final, odds.
+
+Remaining output is each day's best lineup (schedule.plan_days) times every
+starter's per-game projection. Category odds treat what's left as random:
+counting stats as over-dispersed Poisson (variance = mean x dispersion),
+percentages as binomial on the attempts still to come. A category is a
+likely win or loss once those odds pass 70/30; anything closer is a swing.
+"""
+
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass, field
+
+from fantasy.analysis.context import Context
+from fantasy.analysis.schedule import DayPlan, plan_days
+from fantasy.analysis.stats import CAT_FIELDS, PCT_FIELDS, REVERSE_CATS
+from fantasy.espn.constants import IR_SLOT, SLOT_NAMES, UNAVAILABLE_STATUSES
+from fantasy.models import COUNTING_FIELDS, MatchupSide, Team
+from fantasy.timeutil import day_label
+
+DISPERSION = {"PTS": 2.5, "REB": 1.6, "AST": 1.6, "STL": 1.1, "BLK": 1.3, "3PM": 1.4, "TO": 1.2}
+LIKELY = 0.70
+PCT_PARTS = {"FG%": ("FGM", "FGA"), "FT%": ("FTM", "FTA")}
+
+
+@dataclass
+class SideProjection:
+    team: Team
+    side: MatchupSide | None
+    remaining_plans: list[DayPlan]
+    remaining: dict[str, float] = field(default_factory=dict)
+    elapsed: dict[str, float] = field(default_factory=dict)
+
+    @property
+    def scheduled_remaining(self) -> int:
+        return sum(len(p.playing) + len(p.unavailable) for p in self.remaining_plans)
+
+    @property
+    def usable_remaining(self) -> int:
+        return sum(len(p.started) for p in self.remaining_plans)
+
+
+def _sum_lines(ctx: Context, plans: list[DayPlan]) -> dict[str, float]:
+    totals = dict.fromkeys(COUNTING_FIELDS, 0.0)
+    for plan in plans:
+        for player_id in plan.started:
+            line = ctx.lines[player_id]
+            for name in COUNTING_FIELDS:
+                totals[name] += getattr(line, name)
+    return totals
+
+
+def project_side(ctx: Context, team: Team, side: MatchupSide | None) -> SideProjection:
+    remaining = plan_days(ctx.calendar, ctx.snap, team, ctx.values, ctx.sps, ctx.now)
+    elapsed = plan_days(ctx.calendar, ctx.snap, team, ctx.values, ctx.sps, ctx.now, remaining=False)
+    return SideProjection(
+        team=team,
+        side=side,
+        remaining_plans=remaining,
+        remaining=_sum_lines(ctx, remaining),
+        elapsed=_sum_lines(ctx, elapsed),
+    )
+
+
+def _normal_cdf(z: float) -> float:
+    return 0.5 * (1 + math.erf(z / math.sqrt(2)))
+
+
+def _current(side: SideProjection, name: str) -> float | None:
+    return side.side.stats.get(name) if side.side else None
+
+
+def _final_pct(side: SideProjection, cat: str) -> tuple[float | None, float, bool]:
+    """(projected final %, its standard deviation, attempts were estimated)."""
+    made_field, att_field = PCT_FIELDS[cat]
+    made_name, att_name = PCT_PARTS[cat]
+    pct_now = _current(side, cat)
+    att_now = _current(side, att_name)
+    estimated = att_now is None
+    if att_now is None:
+        att_now = side.elapsed[att_field]
+    made_now = _current(side, made_name)
+    if made_now is None:
+        made_now = pct_now * att_now if pct_now is not None else side.elapsed[made_field]
+    made_rem, att_rem = side.remaining[made_field], side.remaining[att_field]
+    attempts = att_now + att_rem
+    if attempts <= 0:
+        return None, 0.0, estimated
+    rate = made_rem / att_rem if att_rem > 0 else 0.0
+    sd = math.sqrt(att_rem * rate * (1 - rate)) / attempts
+    return (made_now + made_rem) / attempts, sd, estimated
+
+
+def _final_count(side: SideProjection, cat: str) -> tuple[float, float]:
+    remaining = side.remaining[CAT_FIELDS[cat]]
+    return (_current(side, cat) or 0.0) + remaining, math.sqrt(remaining * DISPERSION[cat])
+
+
+def win_probability(diff: float, sd: float) -> float:
+    if sd <= 0:
+        return 1.0 if diff > 0 else 0.0 if diff < 0 else 0.5
+    return _normal_cdf(diff / sd)
+
+
+def call(p_win: float) -> str:
+    if p_win >= LIKELY:
+        return "Likely win"
+    if p_win <= 1 - LIKELY:
+        return "Likely loss"
+    return "Swing"
+
+
+def _leader(cat: str, mine: float | None, theirs: float | None) -> str | None:
+    if mine is None or theirs is None:
+        return None
+    if abs(mine - theirs) < 1e-9:
+        return "tie"
+    ahead = mine > theirs
+    if cat in REVERSE_CATS:
+        ahead = not ahead
+    return "me" if ahead else "opp"
+
+
+def sides_for(ctx: Context, team_id: int) -> tuple[MatchupSide | None, MatchupSide | None]:
+    """(this team's side, the opponent's side) of its current matchup."""
+    matchup = ctx.matchup_for(team_id)
+    if matchup is None:
+        return None, None
+    if matchup.home.team_id == team_id:
+        return matchup.home, matchup.away
+    return matchup.away, matchup.home
+
+
+def analyze_matchup(ctx: Context, mine: SideProjection, theirs: SideProjection) -> dict:
+    my_side = mine.side
+    me, opp = mine.team, theirs.team
+    current, projected = [], []
+    estimated_attempts = False
+    for cat in ctx.snap.league.categories:
+        now_me, now_opp = _current(mine, cat), _current(theirs, cat)
+        current.append(
+            {
+                "cat": cat,
+                "me": now_me,
+                "opp": now_opp,
+                "leader": _leader(cat, now_me, now_opp),
+                "result": my_side.results.get(cat) if my_side else None,
+            }
+        )
+        if cat in PCT_FIELDS:
+            final_me, sd_me, est_me = _final_pct(mine, cat)
+            final_opp, sd_opp, est_opp = _final_pct(theirs, cat)
+            estimated_attempts = estimated_attempts or est_me or est_opp
+        elif cat in CAT_FIELDS:
+            final_me, sd_me = _final_count(mine, cat)
+            final_opp, sd_opp = _final_count(theirs, cat)
+        else:
+            continue
+        if final_me is None or final_opp is None:
+            p_win = 0.5
+        else:
+            diff = final_me - final_opp
+            p_win = win_probability(
+                -diff if cat in REVERSE_CATS else diff, math.hypot(sd_me, sd_opp)
+            )
+        projected.append(
+            {"cat": cat, "me": final_me, "opp": final_opp, "p_win": p_win, "call": call(p_win)}
+        )
+
+    first, last = ctx.calendar.date_of(ctx.sps[0]), ctx.calendar.date_of(ctx.sps[-1])
+    return {
+        "period": ctx.snap.league.matchup_period,
+        "dates": [day_label(first) if first else "", day_label(last) if last else ""],
+        "me": {"id": me.id, "name": me.name},
+        "opp": {"id": opp.id, "name": opp.name},
+        "score_now": {
+            "wins": my_side.wins if my_side else 0,
+            "losses": my_side.losses if my_side else 0,
+            "ties": my_side.ties if my_side else 0,
+        },
+        "current": current,
+        "projected": projected,
+        "likely_wins": [r["cat"] for r in projected if r["call"] == "Likely win"],
+        "likely_losses": [r["cat"] for r in projected if r["call"] == "Likely loss"],
+        "swing": [r["cat"] for r in projected if r["call"] == "Swing"],
+        "projected_record": _record(projected),
+        "games": {
+            "me": {
+                "scheduled_remaining": mine.scheduled_remaining,
+                "usable_remaining": mine.usable_remaining,
+            },
+            "opp": {
+                "scheduled_remaining": theirs.scheduled_remaining,
+                "usable_remaining": theirs.usable_remaining,
+            },
+        },
+        "attempts_estimated": estimated_attempts,
+    }
+
+
+def _record(projected: list[dict]) -> str:
+    wins = sum(1 for r in projected if r["p_win"] > 0.5)
+    losses = sum(1 for r in projected if r["p_win"] < 0.5)
+    return f"{wins}-{losses}-{len(projected) - wins - losses}"
+
+
+def team_strength(ctx: Context) -> dict[int, dict]:
+    """Per-game category output of each roster's healthy, non-IR players,
+    ranked 1 (best) to N across the league."""
+    values: dict[int, dict[str, float | None]] = {}
+    counted: dict[int, int] = {}
+    for team in ctx.snap.teams:
+        players = [
+            ctx.snap.players[s.player_id]
+            for s in team.roster
+            if s.slot_id != IR_SLOT
+            and s.player_id in ctx.snap.players
+            and ctx.snap.players[s.player_id].injury_status not in UNAVAILABLE_STATUSES
+        ]
+        totals = dict.fromkeys(COUNTING_FIELDS, 0.0)
+        for player in players:
+            for name in COUNTING_FIELDS:
+                totals[name] += getattr(ctx.lines[player.id], name)
+        cats: dict[str, float | None] = {}
+        for cat in ctx.snap.league.categories:
+            if cat in PCT_FIELDS:
+                made, attempted = PCT_FIELDS[cat]
+                cats[cat] = totals[made] / totals[attempted] if totals[attempted] else None
+            elif cat in CAT_FIELDS:
+                cats[cat] = totals[CAT_FIELDS[cat]]
+        values[team.id] = cats
+        counted[team.id] = len(players)
+
+    ranks: dict[int, dict[str, int]] = {team_id: {} for team_id in values}
+    for cat in ctx.snap.league.categories:
+        scored = {tid: v[cat] for tid, v in values.items() if v.get(cat) is not None}
+        for team_id, value in scored.items():
+            if cat in REVERSE_CATS:
+                better = sum(1 for other in scored.values() if other < value)  # type: ignore[operator]
+            else:
+                better = sum(1 for other in scored.values() if other > value)  # type: ignore[operator]
+            ranks[team_id][cat] = better + 1
+    return {
+        team_id: {"values": values[team_id], "ranks": ranks[team_id], "players": counted[team_id]}
+        for team_id in values
+    }
+
+
+def day_rows(plans_me: list[DayPlan], plans_opp: list[DayPlan] | None, ctx: Context) -> list[dict]:
+    """Per remaining day: NBA volume, who plays, open slots, for both sides."""
+    opp_by_sp = {p.sp: p for p in plans_opp or []}
+    rows = []
+    for plan in plans_me:
+        other = opp_by_sp.get(plan.sp)
+        rows.append(
+            {
+                "sp": plan.sp,
+                "date": plan.date.isoformat(),
+                "label": day_label(plan.date),
+                "nba_games": plan.nba_games,
+                "volume": plan.volume,
+                "my_playing": [ctx.snap.player_name(p) for p in plan.playing],
+                "my_started": len(plan.started),
+                "my_benched": [ctx.snap.player_name(p) for p in plan.benched],
+                "my_out": [ctx.snap.player_name(p) for p in plan.unavailable],
+                "my_open_slots": len(plan.open_slots),
+                "my_open_slot_names": _slot_names(plan.open_slots),
+                "opp_playing": len(other.playing) if other else 0,
+                "opp_started": len(other.started) if other else 0,
+                "opp_open_slots": len(other.open_slots) if other else None,
+            }
+        )
+    return rows
+
+
+def _slot_names(slots: list[int]) -> list[str]:
+    return [SLOT_NAMES.get(s, str(s)) for s in slots]
