@@ -77,7 +77,8 @@ def trade_targets(ctx: Context, strength: dict[int, dict]) -> dict:
                 buy.append({**_player(ctx, pid), "edge": round(value - league_value, 2)})
         for pid in mine:
             value, league_value = _values(ctx, pid)
-            if league_value - value >= PUNT_EDGE:
+            # Only players other managers would actually want are worth shopping.
+            if league_value - value >= PUNT_EDGE and league_value >= max(floor, 0.0):
                 sell.append({**_player(ctx, pid), "edge": round(league_value - value, 2)})
         buy.sort(key=lambda r: -(r["edge"] + r["value"]))
         sell.sort(key=lambda r: -r["edge"])

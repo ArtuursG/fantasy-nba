@@ -36,6 +36,7 @@ Without the browser:
 | `uv run fantasy refresh` | Reads ESPN and saves a snapshot |
 | `uv run fantasy report [--compact] [--out FILE]` | Prints (or writes) the report from the latest snapshot |
 | `uv run fantasy daily` | Both, writing `data/reports/<date>.md` |
+| `uv run fantasy check [--notify] [--always]` | Refreshes and checks today's lineup; `--notify` sends the alert to Telegram when something needs changing (`--always` sends it anyway) |
 
 Add `--demo` to any command to use an invented league instead of ESPN; it
 needs no settings and shows every part of the report with data.
@@ -97,26 +98,55 @@ On macOS or Linux, a cron line does the same:
 0 9 * * * cd /path/to/fantasy-nba-report && uv run fantasy daily
 ```
 
+### Lineup alerts before tip-off
+
+Most NBA games tip off at 02:00-04:30 Riga time (earlier on weekends). A check
+an hour before catches a starter without a game, a player ruled out late or a
+forgotten IR move, and sends it to your phone through Telegram:
+
+1. In Telegram, message **@BotFather**, send `/newbot` and follow the steps;
+   it gives you a bot token.
+2. Send your new bot any message, then open
+   `https://api.telegram.org/bot<token>/getUpdates` in a browser and copy the
+   `chat` `id` number.
+3. Put both in **League settings** on the dashboard (or `TELEGRAM_BOT_TOKEN`
+   and `TELEGRAM_CHAT_ID` in `.dev.vars`) and press **Send test alert**.
+4. Schedule the check, for example at 18:30 and 01:00:
+
+```bat
+schtasks /Create /SC DAILY /ST 01:00 /TN "Fantasy lineup check" /TR "cmd /c cd /d C:\path\to\fantasy-nba-report && uv run fantasy check --notify"
+schtasks /Create /SC DAILY /ST 18:30 /TN "Fantasy lineup check (early games)" /TR "cmd /c cd /d C:\path\to\fantasy-nba-report && uv run fantasy check --notify"
+```
+
+The alert only comes when there is something to do: who to start and for
+whom, who to bench, day-to-day starters to check, IR moves and injuries on
+your team since yesterday.
+
 ## The report
 
 Same sections in the same order every day:
 
-1. **Header and league rules**: date, league, team, snapshot times, categories, lineup slots, C limit, waiver and acquisition rules.
-2. **My roster**: a table, then per player: positions and slot, health and injury note with expected return, ESPN Player Rater ranks, roster %, season / last 7 / last 15 days per-game lines, value and per-category values, advanced stats (TS%, eFG%, 3P% and 3PA, FTA/FGA, AST/TO, OREB/DREB, stocks, double-double rate, share of team games played), per-36 rates, game-to-game consistency (average, spread, floor and ceiling of single-game value), last 5 games, minutes and starts in the last 5, a usage proxy, role and minutes trend, games this matchup (scheduled, left, usable) and back-to-backs.
-3. **Injury / role changes**: minutes up or down, new or lost starting jobs, returns from injury (with minutes since return), injured teammates opening minutes, add-rate surges, likely rookies earning a role.
-4. **Current matchup**: category score now, projected final with win odds, likely wins, likely losses and swing categories, expected categories won, the chance of winning the matchup, and what it takes in each category short of a likely win (extra output to draw even and to reach 70%, per remaining game).
-5. **League transactions**: the last 7 days, marked `[NEW]` since the last report, with waiver results.
-6. **Top free agents**: 50, ranked by interest rather than ESPN rank (15 in detail, 35 in a table), plus streaming targets.
-7. **Add/drop simulator**: the 15 most interesting free agents, each swapped in for the weakest player it helps most to drop, with the change in usable games, expected categories, matchup win chance and each category's odds.
-8. **Opponent roster changes** and the opponent's full roster.
-9. **Schedule**: every remaining day with NBA game count, low and high volume days, who plays, open starting slots, benched players, and each player's remaining games.
-10. **Acquisitions** used and remaining, and IR status.
-11. **Waiver order**.
-12. **Important changes since yesterday**: the headlines, my team first.
-13. **Category strength**: every team's rank 1-10 in each category.
-14. **Season category totals**: every team's actual season-to-date totals and rank in each category.
-15. **Player rankings**: the top 13 rounds by value, with owner, per-game stats, usage proxy, each category's value and the last-15-days value.
-16. **All team rosters** (with each player's value and rank), **changes vs 7 days ago**, **most rostered free agents** and **data notes**.
+1. **Header and league rules**: date, league, team, snapshot times, categories, lineup slots, C limit, waiver and acquisition rules, punt strategy.
+2. **Today's lineup check**: starts set against the best possible lineup, who to start in whose slot, who to bench, day-to-day starters, IR moves, first tip-off.
+3. **My roster**: a table, then per player: positions and slot, health and injury note with expected return, ESPN Player Rater ranks, roster %, season / last 7 / last 15 days per-game lines, value and per-category values, advanced stats (TS%, eFG%, 3P% and 3PA, FTA/FGA, AST/TO, OREB/DREB, stocks, double-double rate, share of team games played), per-36 rates, game-to-game consistency, last 5 games, minutes and starts in the last 5, a usage proxy, role and minutes trend, games this matchup (scheduled, left, usable) and back-to-backs.
+4. **Injury / role changes**: minutes up or down, new or lost starting jobs, returns from injury, injured teammates opening minutes, add-rate surges, likely rookies earning a role.
+5. **Current matchup**: category score now, projected final with win odds, likely wins, losses and swing categories, expected categories won, the chance of winning the matchup, and what it takes in each category short of a likely win.
+6. **Category strategy**: which categories to chase, protect, concede or hold this week, by how much one more streamed game moves each, and the free agents who fit the chase categories.
+7. **League transactions**: the last 7 days, marked `[NEW]` since the last report, with waiver results.
+8. **Top free agents**: 50, ranked by interest rather than ESPN rank, plus streaming targets.
+9. **Add/drop simulator**: the 15 most interesting free agents, each swapped in for the weakest player it helps most to drop, with the effect on usable games, expected categories, matchup win chance and each category.
+10. **Streaming plan**: dated adds and drops that spend the acquisitions left, with the gain from each and the category odds before and after.
+11. **Opponent roster changes** and the opponent's full roster.
+12. **Schedule**: every remaining day with NBA game count, volume, who plays, open starting slots, benched players, and each player's remaining games.
+13. **Next matchup preview**: next week's opponent, projected odds per category, games and usable games, each day's volume and open slots.
+14. **Acquisitions** used and remaining, and IR status; **waiver order**; **important changes since yesterday**.
+15. **Category strength** (projected) and **season category totals** (actual): every team's rank 1-10 in each category.
+16. **Trade targets**: players worth more to you than to the league with your punt (buy), yours worth more to others (sell), and help in your weakest categories.
+17. **Player rankings** (top 13 rounds), **all team rosters**, **changes vs 7 days ago**, **most rostered free agents**, **forecast accuracy** and **data notes**.
+
+The dashboard shows all of this, plus a filterable player rankings table and a
+**trade analyzer**: pick players to give and get and see both teams' category
+ranks, the value each side gains and the effect on this week's matchup.
 
 ## How the numbers are worked out
 
@@ -128,6 +158,9 @@ Same sections in the same order every day:
 - **Player value**: for each category, a per-game z-score against the rostered players (percentages weighted by attempts, so a high-volume shooter moves FG% more; turnovers count against). A player's value is the average over the categories, about +1 for a first-round player and 0 at the edge of what's rostered. With punt categories set, value averages only the others ("LeagV" keeps all of them), and lineups and free agents are ranked by that value; the matchup section still covers every category.
 - **Matchup win chance**: the category odds combined, treating categories as independent, into the odds of each category record; the matchup is won with more categories than the opponent. Categories aren't fully independent (one big night lifts several), so it's a guide, not a promise.
 - **Add/drop simulator**: the rest of the matchup re-projected with the pickup in place of the drop, from the day he can play (after the waiver period for a waived player); what was already played is unchanged.
+- **Streaming plan**: greedy, one acquisition at a time. Each candidate is tried on his first remaining game day (waived players once they clear) against the three weakest players and the plan's own streamers; the dropped player keeps his games until the day before. The swap adding the most expected categories is kept, until acquisitions run out or no swap adds 0.03. The center limit is respected.
+- **Category strategy**: a category's leverage is how much one more game of a typical available streamer moves its win chance; turnovers have negative leverage, since every streamed game adds some.
+- **Forecast accuracy**: every refresh records this week's forecast; when a matchup ends its category results are stored, and the forecasts are scored with the Brier score (0 perfect, 0.25 a coin flip) and a calibration table.
 - **Free-agent interest**: a 9-cat z-score of the projection line, plus recent form, minutes trend, a new starting job, an injured teammate at his position, a return from injury, the add rate and usable games, minus a penalty while he's out.
 
 ## History
