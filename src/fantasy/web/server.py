@@ -25,6 +25,8 @@ STATIC_FILES = {
     "index.html": "text/html; charset=utf-8",
     "app.js": "text/javascript; charset=utf-8",
     "style.css": "text/css; charset=utf-8",
+    # Fonts ship with the app so the dashboard makes no outside requests.
+    **{f"fonts/{p.name}": "font/woff2" for p in (STATIC / "fonts").glob("*.woff2")},
 }
 
 

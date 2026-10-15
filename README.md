@@ -23,6 +23,13 @@ REPORT**, and paste the report into ChatGPT. The full report is long (about
 instead of pasting, and **Compact** leaves out the player rankings, the other
 teams' rosters and free agents 16-50 (about 60k characters).
 
+The dashboard is split into tabs: **Today** (the matchup scoreboard, tonight's
+lineup, changes since yesterday, injuries and acquisitions left), **Matchup**,
+**Roster**, **Wire** (free agents and transactions), **League**, **Rankings**,
+**Report** (the exact text the copy button puts on the clipboard) and
+**Setup**. The fonts ship with the app, so the page loads nothing from the
+internet.
+
 The dashboard also has a **Player rankings** table: every rostered player and
 free agent with per-game stats and a value for each category, for the full
 season, the last 30, 15 or 7 days, or the projection. It filters by free
@@ -51,7 +58,7 @@ uv sync
 uv run fantasy serve
 ```
 
-Open **League settings** at the bottom of the dashboard and fill in:
+Open the **Setup** tab of the dashboard and fill in:
 
 - **League or team page URL**: open your team on fantasy.espn.com and copy the
   address from the browser. It carries `leagueId`, `teamId` and `seasonId`, so
@@ -109,7 +116,7 @@ forgotten IR move, and sends it to your phone through Telegram:
 2. Send your new bot any message, then open
    `https://api.telegram.org/bot<token>/getUpdates` in a browser and copy the
    `chat` `id` number.
-3. Put both in **League settings** on the dashboard (or `TELEGRAM_BOT_TOKEN`
+3. Put both in the dashboard's **Setup** tab (or `TELEGRAM_BOT_TOKEN`
    and `TELEGRAM_CHAT_ID` in `.dev.vars`) and press **Send test alert**.
 4. Schedule the check, for example at 18:30 and 01:00:
 
@@ -209,5 +216,5 @@ the invented demo league.
 | `src/fantasy/store.py` | Snapshot history in SQLite |
 | `src/fantasy/analysis/` | Schedule and lineups, matchup, roles, free agents, rankings, changes, and `view.py`, which assembles them |
 | `src/fantasy/report.py` | The Markdown report |
-| `src/fantasy/web/` | Local dashboard (standard library server, one page) |
+| `src/fantasy/web/` | Local dashboard (standard library server, one page; fonts under `static/fonts`, SIL Open Font License) |
 | `src/fantasy/demo.py` | The invented league used by `--demo` and the tests |

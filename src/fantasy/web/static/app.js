@@ -21,9 +21,12 @@ function h(tag, attrs, ...children) {
 
 const $ = (id) => document.getElementById(id);
 const num = (v, d = 1) => (v === null || v === undefined ? "-" : Number(v).toFixed(d));
-const pct = (v) => (v === null || v === undefined ? "-" : Number(v).toFixed(3));
+// Percentages the box-score way: .452, 1.000.
+const pct = (v) => (v === null || v === undefined ? "-" : Number(v).toFixed(3).replace(/^0\./, "."));
 const signed = (v, d = 1) => (v === null || v === undefined ? "-" : (v >= 0 ? "+" : "") + Number(v).toFixed(d));
+const percent = (p) => Math.round(p * 100) + "%";
 const STATS = [["3PM", "tpm"], ["REB", "reb"], ["AST", "ast"], ["STL", "stl"], ["BLK", "blk"], ["TO", "to"], ["PTS", "pts"]];
+const CALL_CLASS = { "Likely win": "good", "Likely loss": "bad" };
 
 let reportText = "";
 
@@ -33,8 +36,26 @@ function setStatus(text, kind) {
   el.className = "status" + (kind ? " " + kind : "");
 }
 
-function card(title, wide, ...body) {
-  return h("section", { class: "card" + (wide ? " wide" : "") }, h("h2", {}, title), body);
+// size: false = half width, true = full width, "third".
+function card(title, size, ...body) {
+  const cls = size === true ? "panel wide" : size === "third" ? "panel third" : "panel";
+  return h("section", { class: cls }, h("h2", {}, title), body);
+}
+
+function stat(label, value, cls) {
+  return h("div", { class: "stat" }, h("span", { class: "stat-label" }, label), h("span", { class: "stat-value" + (cls ? " " + cls : "") }, value));
+}
+
+function stats(...items) {
+  return h("div", { class: "stats" }, items);
+}
+
+function tag(text, cls) {
+  return h("span", { class: "chip" + (cls ? " " + cls : "") }, text);
+}
+
+function probBar(p, cls) {
+  return h("span", { class: "prob" + (cls ? " " + cls : "") }, h("span", { style: `width:${Math.round(p * 100)}%` }));
 }
 
 function table(headers, rows, opts = {}) {
@@ -63,65 +84,98 @@ function statCells(line) {
 function healthCell(row) {
   const bad = ["OUT", "INJURY_RESERVE", "SUSPENSION"].includes(row.injury_status);
   const warn = ["DAY_TO_DAY", "QUESTIONABLE", "DOUBTFUL"].includes(row.injury_status);
-  return { node: row.health, cls: bad ? "bad" : warn ? "warn" : "", title: row.injury_note || null };
+  // Healthy players get a blank cell so the injured ones stand out.
+  if (!bad && !warn && row.health === "Healthy") return "";
+  return { node: tag(row.health, bad ? "bad" : warn ? "warn" : ""), title: row.injury_note || null };
 }
 
 function trendCell(trend) {
-  return { node: trend, cls: trend === "UP" ? "good" : trend === "DOWN" ? "bad" : "" };
+  if (trend === "UP") return { node: "▲ up", cls: "good" };
+  if (trend === "DOWN") return { node: "▼ down", cls: "bad" };
+  return { node: trend === "-" || !trend ? "-" : trend.toLowerCase(), cls: "muted" };
 }
 
 function minutes(list) {
   return list && list.length ? list.map((m) => m.toFixed(0)).join(" ") : "-";
 }
 
-function renderMatchup(v) {
+function renderScoreboard(v) {
   const mu = v.matchup;
   if (!mu) return card("Matchup", true, h("p", { class: "muted" }, "No current matchup (off week, or your team was not found)."));
   const score = mu.score_now;
+  const fmt = (cat, x) => (x === null || x === undefined ? "-" : cat.endsWith("%") ? pct(x) : num(x, 0));
+  const current = Object.fromEntries(mu.current.map((c) => [c.cat, c]));
+  const daysLeft = v.schedule.days.length;
+  const g = mu.games;
+  const cells = mu.projected.map((p) => {
+    const c = current[p.cat] || {};
+    const call = p.call === "Likely win" ? "win" : p.call === "Likely loss" ? "loss" : "swing";
+    return h("div", { class: "sb-cat " + call, title: `${p.call}. Projected ${fmt(p.cat, p.me)} vs ${fmt(p.cat, p.opp)}` },
+      h("div", { class: "sb-cat-name" }, p.cat),
+      h("div", { class: "sb-cat-now" },
+        h("span", { class: c.leader === "me" ? "lead" : null }, fmt(p.cat, c.me)),
+        h("span", { class: c.leader === "opp" ? "lead" : null }, fmt(p.cat, c.opp))),
+      h("div", { class: "sb-cat-p" }, h("span", { class: "bar-track" }, h("span", { class: "bar-fill", style: `width:${Math.round(p.p_win * 100)}%` })), percent(p.p_win))
+    );
+  });
+  return h("section", { class: "scoreboard", "aria-label": "Current matchup" },
+    h("div", { class: "sb-head" },
+      h("span", {}, `Matchup ${mu.period} · ${mu.dates[0]} – ${mu.dates[1]}`),
+      h("span", { class: "live" }, daysLeft ? `${daysLeft} day${daysLeft === 1 ? "" : "s"} left` : "Final day")),
+    h("div", { class: "sb-main" },
+      h("div", { class: "sb-team" }, mu.me.name, h("small", {}, "You")),
+      h("div", { class: "sb-score", "aria-label": `${score.wins} wins, ${score.losses} losses, ${score.ties} ties` },
+        String(score.wins), h("span", { class: "sep" }, "–"), String(score.losses), h("span", { class: "sep" }, "–"), h("span", { class: "tie" }, String(score.ties))),
+      h("div", { class: "sb-team opp" }, mu.opp.name, h("small", {}, "Opponent"))),
+    h("div", { class: "sb-facts" },
+      h("span", {}, "Projected ", h("b", {}, mu.projected_record)),
+      h("span", {}, "Win chance ", h("b", {}, percent(mu.outlook.p_win_matchup))),
+      h("span", {}, "Expected ", h("b", {}, `${mu.outlook.expected_wins.toFixed(1)} of ${mu.outlook.categories}`), " cats"),
+      h("span", {}, "Games left ", h("b", {}, `${g.me.usable_remaining} usable`), ` of ${g.me.scheduled_remaining} · opp ${g.opp.usable_remaining} of ${g.opp.scheduled_remaining}`)),
+    h("div", { class: "sb-cats" }, cells),
+    h("div", { class: "sb-legend" }, "Each column: you, then the opponent, so far this week. The bar is your chance to win the category by the end of the week.")
+  );
+}
+
+function renderMatchup(v) {
+  const mu = v.matchup;
+  if (!mu) return null;
   const fmt = (cat, x) => (cat.endsWith("%") ? pct(x) : num(x, 0));
   const current = Object.fromEntries(mu.current.map((c) => [c.cat, c]));
   const rows = mu.projected.map((p) => {
     const c = current[p.cat] || {};
-    const callCls = p.call === "Likely win" ? "good" : p.call === "Likely loss" ? "bad" : "warn";
+    const callCls = CALL_CLASS[p.call] || "warn";
     return {
       cells: [
-        p.cat,
+        { node: p.cat, cls: "strong" },
         { node: fmt(p.cat, c.me), cls: c.leader === "me" ? "good" : "" },
         { node: fmt(p.cat, c.opp), cls: c.leader === "opp" ? "bad" : "" },
         fmt(p.cat, p.me),
         fmt(p.cat, p.opp),
-        { node: [Math.round(p.p_win * 100) + "%", h("span", { class: "prob" }, h("span", { style: `width:${Math.round(p.p_win * 100)}%` }))] },
+        { node: [percent(p.p_win), probBar(p.p_win, callCls)] },
         { node: p.call, cls: callCls },
       ],
     };
   });
-  const g = mu.games;
   return card(
-    `Matchup ${mu.period}: ${mu.dates[0]} - ${mu.dates[1]}`,
-    true,
-    h("div", { class: "row" },
-      h("div", {}, h("div", { class: "muted" }, mu.me.name + " vs " + mu.opp.name), h("div", { class: "big" }, `${score.wins}-${score.losses}-${score.ties}`)),
-      h("div", {}, h("div", { class: "muted" }, "Projected"), h("div", { class: "big" }, mu.projected_record)),
-      h("div", {}, h("div", { class: "muted" }, "Matchup win chance"), h("div", { class: "big" }, Math.round(mu.outlook.p_win_matchup * 100) + "%")),
-      h("div", {}, h("div", { class: "muted" }, "Expected categories"), h("div", { class: "big" }, `${mu.outlook.expected_wins.toFixed(1)} / ${mu.outlook.categories}`)),
-      h("div", {}, h("div", { class: "muted" }, "Games left (usable)"), h("div", {}, `Me ${g.me.scheduled_remaining} (${g.me.usable_remaining}) · Opp ${g.opp.scheduled_remaining} (${g.opp.usable_remaining})`))
-    ),
+    `This week vs ${mu.opp.name}`,
+    false,
     h("div", { class: "chips" },
-      mu.likely_wins.map((c) => h("span", { class: "chip good" }, "Win: " + c)),
-      mu.swing.map((c) => h("span", { class: "chip warn" }, "Swing: " + c)),
-      mu.likely_losses.map((c) => h("span", { class: "chip bad" }, "Loss: " + c))
+      mu.likely_wins.map((c) => tag("Win " + c, "good")),
+      mu.swing.map((c) => tag("Swing " + c, "warn")),
+      mu.likely_losses.map((c) => tag("Loss " + c, "bad"))
     ),
     table(["Cat", "Me now", "Opp now", "Me proj", "Opp proj", "Win %", "Call"], rows),
-    renderTargets(mu),
-    mu.attempts_estimated ? h("p", { class: "muted" }, "FGA/FTA so far are estimated from lineups (ESPN's matchup data has only the percentages).") : null
+    mu.attempts_estimated ? h("p", { class: "note" }, "FGA/FTA so far are estimated from lineups (ESPN's matchup data has only the percentages).") : null
   );
 }
 
-function renderTargets(mu) {
-  if (!mu.targets || !mu.targets.length) return null;
+function renderTargets(v) {
+  const mu = v.matchup;
+  if (!mu || !mu.targets || !mu.targets.length) return null;
   const rows = mu.targets.map((t) => {
     const isPct = t.cat.endsWith("%");
-    const f = (x) => (isPct ? Number(x).toFixed(3) : Number(x).toFixed(1));
+    const f = (x) => (isPct ? pct(x) : Number(x).toFixed(1));
     const fewer = t.cat === "TO" ? " fewer" : "";
     return {
       cells: [
@@ -134,7 +188,12 @@ function renderTargets(mu) {
       ],
     };
   });
-  return [h("h3", {}, "What it takes"), table(["Cat", "Win %", "Edge", "To draw even", "To 70%", "Per game left"], rows)];
+  return card(
+    "What it takes",
+    false,
+    h("p", { class: "note" }, "How much more you need in each category you're not yet likely to win, over the rest of the week."),
+    table(["Cat", "Win %", "Edge", "To draw even", "To 70%", "Per game left"], rows)
+  );
 }
 
 function renderSimulator(v) {
@@ -153,7 +212,7 @@ function renderSimulator(v) {
   return card(
     "Add/drop simulator",
     true,
-    h("p", { class: "muted" }, `Now: ${sim.base.expected_wins.toFixed(1)} expected categories, ${Math.round(sim.base.p_win_matchup * 100)}% matchup win chance. Each free agent replaces the weakest player he helps most to drop (${sim.drop_candidates.join(", ")}). Acquisitions left: ${sim.acquisitions_left ?? "?"}.`),
+    h("p", { class: "note" }, `Now: ${sim.base.expected_wins.toFixed(1)} expected categories, ${Math.round(sim.base.p_win_matchup * 100)}% matchup win chance. Each free agent replaces the weakest player he helps most to drop (${sim.drop_candidates.join(", ")}). Acquisitions left: ${sim.acquisitions_left ?? "?"}.`),
     sim.acquisitions_left === 0 ? h("p", { class: "bad" }, "No acquisitions left this matchup.") : null,
     table(["Add", "Team", "Drop", "Playable", "Usable games", "Exp. cats", "Matchup win %", "Biggest changes", "Season value"], rows, { textCols: [0, 1, 2, 3, 7] })
   );
@@ -169,16 +228,17 @@ function renderStreamPlan(v) {
   return card(
     "Streaming plan",
     true,
-    h("div", { class: "row" },
-      h("div", {}, h("div", { class: "muted" }, "Expected categories"), h("div", { class: "big" }, `${plan.base.expected_wins.toFixed(1)} → ${plan.final.expected_wins.toFixed(1)}`)),
-      h("div", {}, h("div", { class: "muted" }, "Matchup win chance"), h("div", { class: "big good" }, `${pctText(plan.base.p_win_matchup)} → ${pctText(plan.final.p_win_matchup)}`)),
-      h("div", {}, h("div", { class: "muted" }, "Usable games"), h("div", { class: "big" }, `${plan.usable_before} → ${plan.usable_after}`)),
-      h("div", {}, h("div", { class: "muted" }, "Acquisitions"), h("div", { class: "big" }, `${plan.steps.length} / ${plan.acquisitions_left}`))
+    stats(
+      stat("Expected categories", `${plan.base.expected_wins.toFixed(1)} → ${plan.final.expected_wins.toFixed(1)}`),
+      stat("Matchup win chance", `${pctText(plan.base.p_win_matchup)} → ${pctText(plan.final.p_win_matchup)}`, "good"),
+      stat("Usable games", `${plan.usable_before} → ${plan.usable_after}`),
+      stat("Acquisitions", `${plan.steps.length} / ${plan.acquisitions_left}`)
     ),
-    h("ol", {}, plan.steps.map((s) => h("li", {},
-      h("strong", {}, s.day), `: ${s.waiver ? "claim" : "add"} ${s.add} (${s.add_team}), drop ${s.drop}${s.drop_is_streamer ? " (streamer)" : ""} · ${signed(s.gain, 2)} cats · usable ${s.usable_games_added >= 0 ? "+" : ""}${s.usable_games_added}`))),
+    h("ol", { class: "steps" }, plan.steps.map((s) => h("li", {},
+      h("strong", {}, s.day), ` · ${s.waiver ? "claim" : "add"} ${s.add} (${s.add_team}), drop ${s.drop}${s.drop_is_streamer ? " (streamer)" : ""}`,
+      h("div", { class: "muted" }, `${signed(s.gain, 2)} expected cats · usable games ${s.usable_games_added >= 0 ? "+" : ""}${s.usable_games_added}`)))),
     table(["Cat", "Now", "With plan"], plan.categories.map((c) => ({ cells: [c.cat, pctText(c.before), { node: pctText(c.after), cls: c.after > c.before + 0.02 ? "good" : c.after < c.before - 0.02 ? "bad" : "" }] }))),
-    h("p", { class: "muted" }, `Only the weakest players are dropped (${plan.droppable.join(", ")}) or streamers the plan added. Re-check daily.`)
+    h("p", { class: "note" }, `Only the weakest players are dropped (${plan.droppable.join(", ")}) or streamers the plan added. Re-check daily.`)
   );
 }
 
@@ -189,9 +249,9 @@ function renderStrategy(v) {
   return card(
     "Category strategy",
     false,
-    h("div", { class: "chips" }, st.categories.map((r) => h("span", { class: "chip " + (cls[r.plan] || "") }, `${r.plan}: ${r.cat}`))),
+    h("div", { class: "chips" }, st.categories.map((r) => tag(`${r.plan} ${r.cat}`, cls[r.plan]))),
     table(["Cat", "Win %", "Plan", "Per streamer game"], st.categories.map((r) => ({ cells: [r.cat, Math.round(r.p_win * 100) + "%", r.plan, (r.leverage >= 0 ? "+" : "") + (r.leverage * 100).toFixed(1) + " pts"] }))),
-    st.best_fits.length ? h("p", {}, "Best fits for the chase categories: " + st.best_fits.map((f) => f.name + (f.helps.length ? ` (${f.helps.join(", ")})` : "")).join(", ")) : null
+    st.best_fits.length ? h("p", { class: "note" }, "Best fits for the chase categories: " + st.best_fits.map((f) => f.name + (f.helps.length ? ` (${f.helps.join(", ")})` : "")).join(", ")) : null
   );
 }
 
@@ -200,14 +260,19 @@ function renderNextMatchup(v) {
   if (!nm) return null;
   const fmt = (cat, x) => (cat.endsWith("%") ? pct(x) : num(x, 0));
   return card(
-    `Next matchup: ${nm.dates[0]} - ${nm.dates[1]} vs ${nm.opponent}`,
+    `Next week: vs ${nm.opponent}, ${nm.dates[0]} – ${nm.dates[1]}`,
     true,
-    h("div", { class: "row" },
-      h("div", {}, h("div", { class: "muted" }, "Win chance"), h("div", { class: "big" }, Math.round(nm.outlook.p_win_matchup * 100) + "%")),
-      h("div", {}, h("div", { class: "muted" }, "Expected categories"), h("div", { class: "big" }, `${nm.outlook.expected_wins.toFixed(1)} / ${nm.outlook.categories}`)),
-      h("div", {}, h("div", { class: "muted" }, "Games (usable)"), h("div", {}, `Me ${nm.games.me.scheduled} (${nm.games.me.usable}) · Opp ${nm.games.opp.scheduled} (${nm.games.opp.usable})`))
+    stats(
+      stat("Win chance", percent(nm.outlook.p_win_matchup)),
+      stat("Expected categories", `${nm.outlook.expected_wins.toFixed(1)} / ${nm.outlook.categories}`),
+      stat("Usable games", `${nm.games.me.usable} vs ${nm.games.opp.usable}`),
+      stat("Scheduled", `${nm.games.me.scheduled} vs ${nm.games.opp.scheduled}`)
     ),
-    table(["Cat", "My proj", "Opp proj", "Win %", "Call", "My rank", "Opp rank"], nm.projected.map((p) => ({ cells: [p.cat, fmt(p.cat, p.me), fmt(p.cat, p.opp), Math.round(p.p_win * 100) + "%", p.call, nm.ranks[p.cat]?.me ?? "-", nm.ranks[p.cat]?.opp ?? "-"] }))),
+    table(["Cat", "My proj", "Opp proj", "Win %", "Call", "My rank", "Opp rank"], nm.projected.map((p) => {
+      const callCls = CALL_CLASS[p.call] || "warn";
+      const rank = (r) => ({ node: r ?? "-", cls: r ? "rank-" + r : "" });
+      return { cells: [{ node: p.cat, cls: "strong" }, fmt(p.cat, p.me), fmt(p.cat, p.opp), { node: [percent(p.p_win), probBar(p.p_win, callCls)] }, { node: p.call, cls: callCls }, rank(nm.ranks[p.cat]?.me), rank(nm.ranks[p.cat]?.opp)] };
+    })),
     h("h3", {}, "Days"),
     table(["Day", "NBA games", "Volume", "My players", "My open slots", "Opp playing"], nm.days.map((d) => ({ cells: [d.label, d.nba_games, d.volume, d.my_playing.length, { node: d.my_open_slots, cls: d.my_open_slots > 0 ? "good" : "" }, d.opp_playing] })))
   );
@@ -246,11 +311,12 @@ function renderTrade(v) {
     const fmt = (cat, x) => (cat.endsWith("%") ? pct(x) : num(x));
     const mu = data.matchup;
     result.replaceChildren(
-      h("div", { class: "row" },
-        h("div", {}, h("div", { class: "muted" }, "Value to me"), h("div", { class: "big " + (data.value_change >= 0 ? "good" : "bad") }, signed(data.value_change, 2))),
-        h("div", {}, h("div", { class: "muted" }, "Average category rank"), h("div", { class: "big" }, `${data.avg_rank_before} → ${data.avg_rank_after}`)),
-        h("div", {}, h("div", { class: "muted" }, `Value to ${data.partner}`), h("div", { class: "big" }, signed(data.partner_value_change, 2))),
-        mu ? h("div", {}, h("div", { class: "muted" }, "This matchup"), h("div", {}, `${mu.expected_before.toFixed(1)} → ${mu.expected_after.toFixed(1)} cats, ${Math.round(mu.p_win_before * 100)}% → ${Math.round(mu.p_win_after * 100)}%`)) : null
+      h("h3", {}, "Verdict"),
+      stats(
+        stat("Value to me", signed(data.value_change, 2), data.value_change >= 0 ? "good" : "bad"),
+        stat("Average category rank", `${data.avg_rank_before} → ${data.avg_rank_after}`),
+        stat(`Value to ${data.partner}`, signed(data.partner_value_change, 2)),
+        mu ? stat("This matchup", `${mu.expected_before.toFixed(1)} → ${mu.expected_after.toFixed(1)} cats, ${percent(mu.p_win_before)} → ${percent(mu.p_win_after)}`, "small") : null
       ),
       data.warnings.map((w) => h("p", { class: "warn" }, w)),
       table(
@@ -263,7 +329,7 @@ function renderTrade(v) {
     );
   });
   const tt = v.trade_targets;
-  const line = (r) => h("li", {}, `${r.name} (${r.pro_team}, ${r.owner}): value ${signed(r.value, 2)}, league ${signed(r.league_value, 2)}`);
+  const line = (r) => h("li", {}, h("strong", {}, r.name), ` ${r.pro_team} · ${r.owner} · value ${signed(r.value, 2)}, league ${signed(r.league_value, 2)}`);
   return card(
     "Trade analyzer",
     true,
@@ -310,10 +376,10 @@ function renderAdvanced(v) {
     };
   });
   return card(
-    "Advanced stats: my roster",
+    "Advanced stats",
     true,
     table(["Player", "TS%", "eFG%", "3P%", "3PA", "AST/TO", "OREB", "DREB", "Stocks", "DD%", "PTS/36", "USG~", "Game value", "Spread", "Floor", "Ceiling", "Played"], rows, { textCols: [0] }),
-    h("p", { class: "muted" }, "Game value: each of the last 15 games scored like the rankings. Spread is how much it swings; floor and ceiling are the 20th and 80th percentile. Played: games played of the team's games.")
+    h("p", { class: "note" }, "Game value: each of the last 15 games scored like the rankings. Spread is how much it swings; floor and ceiling are the 20th and 80th percentile. Played: games played of the team's games.")
   );
 }
 
@@ -322,8 +388,9 @@ function renderSeason(v) {
   if (!rows) return null;
   const cats = Object.keys(rows[0].values);
   return card(
-    "Season category totals (actual, rank 1 = best)",
+    "Season totals",
     true,
+    h("p", { class: "note" }, "Actual category totals so far. Rank 1 is best; hover a rank for the total."),
     table(
       ["Team", "Record", ...cats, "Avg"],
       rows.map((r) => ({
@@ -343,21 +410,22 @@ function renderLineup(v) {
   const c = v.lineup;
   if (!c) return null;
   const items = [];
-  c.swaps.forEach((s) => items.push(h("li", { class: "bad" }, s.for ? `Start ${s.start}${s.tipoff ? " (" + s.tipoff + ")" : ""} in ${s.slot} for ${s.for} (${s.reason})` : `Start ${s.start}: rearrange slots to fit him`)));
-  c.bench.forEach((b) => items.push(h("li", { class: "bad" }, `Bench ${b.name} (${b.reason})`)));
-  c.watch.forEach((w) => items.push(h("li", { class: "warn" }, `Check before lock: ${w}`)));
-  c.ir.forEach((f) => items.push(h("li", { class: "bad" }, f)));
-  c.consider.forEach((f) => items.push(h("li", {}, `Consider: ${f}`)));
+  const item = (label, cls, text) => items.push(h("li", {}, tag(label, cls), text));
+  c.swaps.forEach((s) => item("Start", "bad", s.for ? `${s.start}${s.tipoff ? " (" + s.tipoff + ")" : ""} in ${s.slot} for ${s.for} (${s.reason})` : `${s.start}: rearrange slots to fit him`));
+  c.bench.forEach((b) => item("Bench", "bad", `${b.name} (${b.reason})`));
+  c.watch.forEach((w) => item("Check", "warn", `${w}, before lock`));
+  c.ir.forEach((f) => item("IR", "bad", f));
+  c.consider.forEach((f) => item("Maybe", "", f));
   const ok = c.lost_games === 0;
   return card(
-    `Lineup check: ${c.day}${c.is_today ? " (today)" : ""}`,
-    true,
-    h("div", { class: "row" },
-      h("div", {}, h("div", { class: "muted" }, "Starts set"), h("div", { class: "big " + (ok ? "good" : "bad") }, `${c.current_starts} / ${c.best_starts}`)),
-      h("div", {}, h("div", { class: "muted" }, "First tip-off"), h("div", { class: "big" }, c.lock ? c.lock.slice(11) : "-")),
-      h("div", {}, h("div", { class: "muted" }, "Open slots"), h("div", { class: "big" }, String(c.open_slots)))
+    `Lineup: ${c.is_today ? "tonight" : c.day}`,
+    false,
+    stats(
+      stat("Starts set", `${c.current_starts} / ${c.best_starts}`, ok ? "good" : "bad"),
+      stat("First tip-off", c.lock ? c.lock.slice(11) : "-"),
+      stat("Open slots", String(c.open_slots))
     ),
-    items.length ? h("ul", { class: "plain" }, items) : h("p", { class: "good" }, "Lineup is set: nothing to change.")
+    items.length ? h("ul", { class: "plain" }, items) : h("p", { class: "good" }, "Lineup is set. Nothing to change.")
   );
 }
 
@@ -367,7 +435,7 @@ function renderChanges(v) {
   if (!c.since) body = h("p", { class: "muted" }, "First snapshot: changes appear from the next day.");
   else if (!c.bullets.length) body = h("p", { class: "muted" }, "Nothing important since " + v.meta.compared_with + ".");
   else body = h("ul", { class: "plain" }, c.bullets.slice(0, 20).map((b) => h("li", {}, b)));
-  return card("Important changes since yesterday", false, body);
+  return card("Since yesterday", false, body);
 }
 
 function renderAcquisitions(v) {
@@ -376,14 +444,14 @@ function renderAcquisitions(v) {
   return card(
     "Acquisitions, waivers, IR",
     false,
-    a ? [h("div", { class: "row" }, h("span", { class: "big" }, `${a.used} / ${a.limit}`), h("span", { class: "muted" }, `used this matchup, ${a.remaining} left`)),
-         h("div", { class: "meter" }, h("span", { style: `width:${Math.min(100, (a.used / a.limit) * 100)}%` }))] : null,
+    a ? [stats(stat("Used this matchup", `${a.used} / ${a.limit}`), stat("Left", String(a.remaining), a.remaining ? "" : "bad")),
+         h("div", { class: "segments", "aria-hidden": "true" }, Array.from({ length: a.limit }, (_, i) => h("span", { class: i < a.used ? "used" : null })))] : null,
     h("h3", {}, "Waiver order"),
-    h("ol", {}, v.waiver_order.map((w) => h("li", { class: w.is_me ? "good" : null }, w.team + (w.is_me ? " (you)" : "")))),
+    h("ol", { class: "order" }, v.waiver_order.map((w) => h("li", { class: w.is_me ? "good" : null }, w.team + (w.is_me ? " (you)" : "")))),
     ir ? [h("h3", {}, "IR"),
       ir.players.length ? h("ul", { class: "plain" }, ir.players.map((p) => h("li", {}, `${p.name}: ${p.health}${p.expected_return ? ", back ~" + p.expected_return : ""}`))) : h("p", { class: "muted" }, "IR slot empty"),
       ir.flags.map((f) => h("p", { class: "bad" }, f))] : null,
-    h("p", { class: "muted" }, `C-eligible on roster: ${v.my_c_count} / ${v.meta.rules.c_limit}`)
+    h("p", { class: "note" }, `C-eligible on roster: ${v.my_c_count} / ${v.meta.rules.c_limit}`)
   );
 }
 
@@ -395,9 +463,7 @@ function renderAlerts(v) {
     false,
     h("ul", { class: "plain" }, v.alerts.slice(0, 40).map((a) =>
       h("li", {},
-        h("strong", {}, a.name), ` (${a.pro_team}) `,
-        h("span", { class: "chip" }, a.owner), " ",
-        h("span", { class: "chip " + (cls[a.trend] || "") }, a.trend),
+        tag(a.trend, cls[a.trend]), h("strong", {}, a.name), ` ${a.pro_team} · `, h("span", { class: "muted" }, a.owner),
         h("ul", { class: "alert-lines" }, a.lines.map((l) => h("li", {}, l)))
       )))
   );
@@ -422,10 +488,10 @@ function renderMyRoster(v) {
   const t = v.my_team;
   if (!t) return card("My roster", true, h("p", { class: "bad" }, "Your team was not found. Set FANTASY_TEAM to its name."));
   return card(
-    `My roster: ${t.name} (${t.record})`,
+    "My roster",
     true,
     table([...ROSTER_HEAD, "Usable"], rosterRows(t.roster, true), { textCols: [0, 1, 2, 3, 4] }),
-    h("p", { class: "muted" }, "Season per-game averages; * = ESPN projection (no games yet). Hover a health cell for the injury note.")
+    h("p", { class: "note" }, "Season per-game averages; * = ESPN projection (no games yet). Hover a health cell for the injury note.")
   );
 }
 
@@ -446,7 +512,7 @@ function renderSchedule(v) {
     ],
   }));
   return card(
-    "Schedule: remaining days",
+    "Days left this week",
     true,
     table(["Day", "NBA games", "Volume", "My players playing", "My open slots", "Benched (no slot)", "Out", "Opp playing", "Opp open"], rows, { textCols: [0, 3, 5, 6], wrapCols: [3] })
   );
@@ -465,15 +531,16 @@ function renderFreeAgents(v) {
     };
   });
   return card(
-    "Top free agents (by interest, not ESPN rank)",
+    "Free agents",
     true,
-    table(["#", "Player", "Team", "Pos", "St", "Health", "Ros%", "+/-", "Proj MIN", "Last 5 MIN", "Starts", "Trend", "FG%", "FT%", ...STATS.map(([l]) => l), "Usable", "Why"], rows, { textCols: [1, 2, 3, 4, 5], wrapCols: [21] })
+    h("p", { class: "note" }, "Sorted by how interesting they are right now (minutes, role, schedule, adds), not by ESPN rank. * = ESPN projection."),
+    table(["#", "Player", "Team", "Pos", "St", "Health", "Ros%", "+/-", "Proj MIN", "Last 5 MIN", "Starts", "Trend", "FG%", "FT%", ...STATS.map(([l]) => l), "Usable", "Why"], rows, { textCols: [1, 2, 3, 4, 5, 22], wrapCols: [22] })
   );
 }
 
 function renderPopular(v) {
   return card(
-    "Most rostered free agents",
+    "Most rostered FAs",
     false,
     table(["Player", "Team", "Pos", "Health", "Ros%", "+/-"], v.popular_free_agents.map((r) => ({ cells: [r.name, r.pro_team, r.positions, r.health, num(r.roster_pct), signed(r.roster_pct_change)] })), { textCols: [0, 1, 2, 3] })
   );
@@ -481,14 +548,14 @@ function renderPopular(v) {
 
 function renderTransactions(v) {
   const rows = v.transactions;
-  if (!rows.length) return card("Transactions (7 days)", false, h("p", { class: "muted" }, "None."));
+  if (!rows.length) return card("Transactions, 7 days", false, h("p", { class: "muted" }, "None."));
   return card(
-    "Transactions (7 days)",
+    "Transactions, 7 days",
     false,
     h("ul", { class: "plain" }, rows.map((t) => {
       const actions = [...t.adds.map((n) => "ADD " + n), ...t.drops.map((n) => "DROP " + n), ...t.trades.map((n) => "TRADE " + n)];
       return h("li", {},
-        t.new ? h("span", { class: "chip warn" }, "NEW") : null, " ",
+        t.new ? tag("New", "solid") : null,
         h("strong", {}, t.team), ": ", actions.join(", ") || "-",
         h("div", { class: "muted" }, `${new Date(t.ts).toLocaleString()} · ${t.source}${t.result ? " · " + t.result : ""}`)
       );
@@ -511,7 +578,12 @@ function renderStrength(v) {
       num(avgRank(t)),
     ],
   }));
-  return card("Category strength (rank 1 = best, projected per game)", true, table(["Team", ...cats, "Avg"], rows, { textCols: [0] }));
+  return card(
+    "Category strength",
+    true,
+    h("p", { class: "note" }, "Projected per game from each roster. Rank 1 is best; hover a rank for the value."),
+    table(["Team", ...cats, "Avg"], rows, { textCols: [0] })
+  );
 }
 
 function avgRank(t) {
@@ -525,7 +597,7 @@ function renderTeams(v) {
     true,
     v.teams.filter((t) => !t.is_me).map((t) =>
       h("details", { class: "team", open: t.is_opp ? true : null },
-        h("summary", {}, `${t.name}${t.is_opp ? " (opponent)" : ""} · ${t.record} · waiver #${t.waiver_rank ?? "-"} · acq ${t.acquisitions.used}/${t.acquisitions.limit} · games left ${t.games_remaining}`),
+        h("summary", {}, t.name, t.is_opp ? tag("Opponent", "solid") : null, h("span", { class: "muted" }, `${t.record} · waiver #${t.waiver_rank ?? "-"} · acq ${t.acquisitions.used}/${t.acquisitions.limit} · games left ${t.games_remaining}`)),
         table(ROSTER_HEAD, rosterRows(t.roster, false), { textCols: [0, 1, 2, 3, 4] })
       ))
   );
@@ -589,7 +661,7 @@ function renderRankings(view) {
     select([["all", "All positions"], ...["PG", "SG", "SF", "PF", "C"].map((p) => [p, p])], rankState.pos, (v) => { rankState.pos = v; }),
     search
   );
-  const puntRow = h("div", { class: "controls" }, h("span", { class: "muted" }, "Punt:"), puntBoxes);
+  const puntRow = h("div", { class: "controls" }, h("span", { class: "stat-label" }, "Punt"), puntBoxes);
 
   function draw() {
     const rows = rankedRows(view).slice(0, 200).map((row) => ({
@@ -615,13 +687,13 @@ function renderRankings(view) {
     controls,
     puntRow,
     body,
-    h("p", { class: "muted" }, "Values are per-game z-scores against the rostered players (about +1 first round, 0 the edge of rosterable). Value leaves out punted categories; LeagV counts all. USG~ is a usage proxy: (FGA + 0.44 FTA + TO) per 36 minutes. Owner: ME, OPP, team abbreviation, FA or WA.")
+    h("p", { class: "note" }, "Values are per-game z-scores against the rostered players (about +1 first round, 0 the edge of rosterable). Value leaves out punted categories; LeagV counts all. USG~ is a usage proxy: (FGA + 0.44 FTA + TO) per 36 minutes. Owner: ME, OPP, team abbreviation, FA or WA.")
   );
 }
 
 let settingsData = null;
 
-function renderSettings(open) {
+function renderSettings() {
   const s = settingsData || {};
   const field = (label, input, hint) => h("label", { class: "field" }, h("span", {}, label), input, hint ? h("small", { class: "muted" }, hint) : null);
   const url = h("input", { type: "url", placeholder: "https://fantasy.espn.com/basketball/team?leagueId=...&teamId=...", autocomplete: "off" });
@@ -655,9 +727,10 @@ function renderSettings(open) {
     rankState.punt = null;
     render(data.view, settingsData.demo);
   });
-  return h("details", { class: "card wide settings", open: open ? true : null },
-    h("summary", {}, "League settings"),
-    h("p", { class: "muted" }, "Open your team page on fantasy.espn.com and copy its address: it carries the league, team and season ids. The two cookies come from the browser while logged in: press F12, then Application (Chrome/Edge) or Storage (Firefox), Cookies, espn.com, and copy espn_s2 and SWID. ESPN has no API key; these cookies are what give read access to a private league. They are saved only in .dev.vars on this computer."),
+  return card(
+    "League settings",
+    true,
+    h("p", { class: "note" }, "Open your team page on fantasy.espn.com and copy its address: it carries the league, team and season ids. The two cookies come from the browser while logged in: press F12, then Application (Chrome/Edge) or Storage (Firefox), Cookies, espn.com, and copy espn_s2 and SWID. ESPN has no API key; these cookies are what give read access to a private league. They are saved only in .dev.vars on this computer."),
     h("div", { class: "form" },
       field("League or team page URL", url),
       field("espn_s2", s2),
@@ -672,49 +745,102 @@ function renderSettings(open) {
   );
 }
 
+function renderReport() {
+  const area = h("textarea", { id: "report-text", class: "report-text", readonly: true, spellcheck: "false", "aria-label": "Daily report text" });
+  area.value = reportText;
+  return card(
+    "Daily report",
+    true,
+    h("p", { class: "note", id: "report-size" }, reportSize()),
+    area
+  );
+}
+
+function reportSize() {
+  if (!reportText) return "Loading the report...";
+  const compact = $("compact").checked ? "compact" : "full";
+  return `${reportText.length.toLocaleString()} characters, ${compact} version. This is exactly what COPY DAILY FANTASY REPORT puts on the clipboard.`;
+}
+
+const TABS = [
+  ["today", "Today"],
+  ["matchup", "Matchup"],
+  ["roster", "Roster"],
+  ["wire", "Wire"],
+  ["league", "League"],
+  ["rankings", "Rankings"],
+  ["report", "Report"],
+  ["setup", "Setup"],
+];
+
+function currentTab() {
+  const key = location.hash.slice(1);
+  return TABS.some(([k]) => k === key) ? key : "today";
+}
+
+function showTab(key) {
+  document.querySelectorAll(".section").forEach((el) => { el.hidden = el.dataset.tab !== key; });
+  document.querySelectorAll(".tab").forEach((el) => el.setAttribute("aria-selected", String(el.dataset.tab === key)));
+}
+
+function renderTabs(counts) {
+  const nav = $("tabs");
+  nav.replaceChildren(...TABS.map(([key, label]) => {
+    const button = h("button", { type: "button", class: "tab", role: "tab", "data-tab": key },
+      label, counts[key] ? h("span", { class: "count", title: "Things to fix" }, String(counts[key])) : null);
+    button.addEventListener("click", () => {
+      if (location.hash.slice(1) !== key) history.replaceState(null, "", "#" + key);
+      showTab(key);
+    });
+    return button;
+  }));
+}
+
+function renderMasthead(view) {
+  const m = view.meta;
+  const date = new Date(m.date + "T12:00:00");
+  $("league-name").textContent = m.league;
+  $("dateline").textContent = [
+    date.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" }),
+    `Snapshot ${m.fetched_at.slice(11)}`,
+    m.compared_with ? `vs ${m.compared_with}` : "first snapshot",
+  ].join(" · ");
+  const me = view.my_team;
+  $("subtitle").textContent = me ? `${me.name} · season ${m.season_label} · ${me.record}` : "Your team was not found: set it under Setup.";
+}
+
 function render(view, demo) {
   const app = $("app");
   app.replaceChildren();
   $("demo-banner").hidden = !demo;
   if (!view) {
-    app.append(
-      card("Start here", true, h("p", {}, "Fill in League settings below, press Refresh to read your league from ESPN and save today's snapshot, then copy the report into ChatGPT.")),
-      renderSettings(!(settingsData && settingsData.league_id))
-    );
+    $("tabs").replaceChildren();
+    app.append(h("div", { class: "section" },
+      h("section", { class: "empty-state" }, h("p", {}, "Fill in League settings below, press Refresh to read your league from ESPN and save today's snapshot, then copy the report into ChatGPT.")),
+      renderSettings()));
     $("copy").disabled = true;
     $("download").disabled = true;
-    $("preview-card").hidden = true;
     return;
   }
-  const m = view.meta;
-  $("subtitle").textContent = `${m.league} · ${m.my_team || "team not found"} · snapshot ${m.fetched_at}` + (m.compared_with ? ` · vs ${m.compared_with}` : "");
+  renderMasthead(view);
+  const c = view.lineup;
+  const fixes = c ? c.swaps.length + c.bench.length + c.ir.length : 0;
   // Some panels are absent (no matchup, no season totals yet): skip them.
-  const panels = [
-    renderLineup(view),
-    renderMatchup(view),
-    renderStrategy(view),
-    renderChanges(view),
-    renderAcquisitions(view),
-    renderAlerts(view),
-    renderMyRoster(view),
-    renderSchedule(view),
-    renderNextMatchup(view),
-    renderFreeAgents(view),
-    renderSimulator(view),
-    renderStreamPlan(view),
-    renderAdvanced(view),
-    renderTransactions(view),
-    renderPopular(view),
-    renderAccuracy(view),
-    renderStrength(view),
-    renderSeason(view),
-    renderTrade(view),
-    renderRankings(view),
-    renderTeams(view),
-    renderSettings(false),
-  ];
-  app.append(...panels.filter(Boolean));
-  if (m.warnings && m.warnings.length) setStatus("Warnings: " + m.warnings.join(" | "));
+  const sections = {
+    today: [renderScoreboard(view), renderLineup(view), renderChanges(view), renderAlerts(view), renderAcquisitions(view)],
+    matchup: [renderMatchup(view), renderTargets(view), renderStrategy(view), renderAccuracy(view), renderSchedule(view), renderStreamPlan(view), renderSimulator(view), renderNextMatchup(view)],
+    roster: [renderMyRoster(view), renderAdvanced(view)],
+    wire: [renderFreeAgents(view), renderTransactions(view), renderPopular(view)],
+    league: [renderStrength(view), renderSeason(view), renderTrade(view), renderTeams(view)],
+    rankings: [renderRankings(view)],
+    report: [renderReport()],
+    setup: [renderSettings()],
+  };
+  renderTabs({ today: fixes });
+  app.append(...TABS.map(([key]) => h("div", { class: "section", "data-tab": key, role: "tabpanel" }, sections[key].filter(Boolean))));
+  showTab(currentTab());
+  const warnings = view.meta.warnings || [];
+  if (warnings.length) setStatus("Warnings: " + warnings.join(" | "));
   loadReport();
 }
 
@@ -723,8 +849,10 @@ async function loadReport() {
   const res = await fetch("/api/report?compact=" + compact);
   if (!res.ok) return;
   reportText = await res.text();
-  $("report-text").value = reportText;
-  $("preview-card").hidden = false;
+  const area = $("report-text");
+  if (area) area.value = reportText;
+  const size = $("report-size");
+  if (size) size.textContent = reportSize();
   $("copy").disabled = false;
   $("download").disabled = false;
 }
@@ -761,15 +889,18 @@ async function copyReport() {
   try {
     await navigator.clipboard.writeText(reportText);
   } catch {
-    // Older browsers or a denied permission: copy from the selected textarea.
-    const area = $("report-text");
-    $("preview-card").open = true;
+    // Older browsers or a denied permission: copy through a hidden textarea.
+    const area = h("textarea", { style: "position:fixed;left:-9999px;top:0", readonly: true });
+    area.value = reportText;
+    document.body.append(area);
     area.select();
     document.execCommand("copy");
+    area.remove();
   }
   setStatus(`Report copied (${reportText.length.toLocaleString()} characters). Paste it into ChatGPT.`, "ok");
 }
 
+window.addEventListener("hashchange", () => showTab(currentTab()));
 $("refresh").addEventListener("click", refresh);
 $("copy").addEventListener("click", copyReport);
 $("download").addEventListener("click", () => {

@@ -147,7 +147,7 @@ class FantasyApp:
         if not (config.telegram_token and config.telegram_chat_id):
             raise ConfigError(
                 "Telegram is not set up: add TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in the "
-                "dashboard's League settings or in .dev.vars."
+                "dashboard's Setup tab or in .dev.vars."
             )
         try:
             send_telegram(config.telegram_token, config.telegram_chat_id, text)

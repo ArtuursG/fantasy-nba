@@ -29,6 +29,8 @@ def test_dashboard_refresh_and_report(server):
     assert page.status_code == 200 and "COPY DAILY FANTASY REPORT" in page.text
     assert "Download .md" in page.text
     assert httpx.get(server + "/static/app.js").status_code == 200
+    font = httpx.get(server + "/static/fonts/big-shoulders-latin.woff2")
+    assert font.status_code == 200 and font.headers["content-type"] == "font/woff2"
     assert httpx.get(server + "/static/../config.py").status_code == 404
 
     assert httpx.get(server + "/api/state").json() == {"view": None, "demo": True}
