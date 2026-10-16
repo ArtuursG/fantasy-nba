@@ -367,6 +367,10 @@ th {
 }
 td { border-bottom: 1px solid var(--rule); }
 th:first-child, td:first-child { padding-left: 0; }
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { color: var(--ink); }
+th[aria-sort]::after { content: " ▼"; color: var(--spot); }
+th[aria-sort="ascending"]::after { content: " ▲"; }
 th:last-child, td:last-child { padding-right: 0; }
 th:first-child, td:first-child, td.text, th.text { text-align: left; }
 tbody tr:hover td { background: color-mix(in srgb, var(--ink) 5%, transparent); }

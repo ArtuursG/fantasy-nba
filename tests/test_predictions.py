@@ -220,3 +220,18 @@ def test_game_counts_cover_every_pairing_with_mine_first(view):
     # The demo has a DTD player on my team and an OUT one on IR.
     assert mine["uncertain_games"] > 0
     assert mine["expected_remaining"] < mine["usable_remaining"]
+
+
+def test_what_if_covers_every_add_and_drop_pair(view):
+    w = view["what_if"]
+    assert w["adds"] and w["drops"]
+    assert len(w["results"]) == len(w["adds"]) * len(w["drops"])
+    n = len(w["categories"])
+    assert len(w["base"]["p_win"]) == n
+    row = w["results"][f"{w['adds'][0]['id']}:{w['drops'][0]['id']}"]
+    assert len(row) == len(w["columns"]) + n
+    assert 0 <= row[0] <= 1
+    # The simulator's best move for a free agent agrees with the grid.
+    move = view["moves"]["moves"][0]
+    grid = w["results"][f"{move['add_id']}:{move['drop_id']}"]
+    assert grid[0] == pytest.approx(move["p_win_after"], abs=0.001)

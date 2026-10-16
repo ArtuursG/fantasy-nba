@@ -34,7 +34,7 @@ from fantasy.analysis.schedule import (
     plan_days,
     positions,
 )
-from fantasy.analysis.simulator import simulate_moves
+from fantasy.analysis.simulator import simulate_moves, what_if
 from fantasy.analysis.stats import REVERSE_CATS, average, usage_proxy
 from fantasy.analysis.strategy import category_strategy, next_matchup
 from fantasy.analysis.trade import trade_targets
@@ -332,6 +332,7 @@ def build_view(
 
     matchup = None
     moves = None
+    whatif = None
     stream_plan = None
     strategy = None
     if me is not None and opp_id is not None and snap.team(opp_id):
@@ -342,6 +343,7 @@ def build_view(
         candidates = [r["player_id"] for r in fa_ranked if r["games_remaining"] > 0]
         acquisitions_left = _acquisitions(ctx, me)["remaining"]
         moves = simulate_moves(ctx, mine, theirs, candidates, acquisitions_left)
+        whatif = what_if(ctx, mine, theirs, candidates)
         stream_plan = plan_streams(ctx, mine, theirs, candidates, acquisitions_left)
         strategy = category_strategy(ctx, matchup["projected"], candidates)
 
@@ -399,6 +401,7 @@ def build_view(
 
     return {
         "game_counts": league_game_counts(ctx),
+        "what_if": whatif,
         "meta": {
             "date": ctx.now.astimezone(tz).date().isoformat(),
             "fetched_at": ctx.now.astimezone(tz).strftime("%Y-%m-%d %H:%M"),

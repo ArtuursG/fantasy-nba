@@ -70,7 +70,43 @@ function table(headers, rows, opts = {}) {
     });
     return h("tr", { class: r.cls || null }, cells);
   });
-  return h("div", { class: opts.tall ? "scroll tall" : "scroll" }, h("table", {}, h("thead", {}, head), h("tbody", {}, body)));
+  const tbody = h("tbody", {}, body);
+  makeSortable(head, tbody);
+  return h("div", { class: opts.tall ? "scroll tall" : "scroll" }, h("table", {}, h("thead", {}, head), tbody));
+}
+
+// Click a column header to sort: numbers largest first, text A-Z; click
+// again to reverse. Empty cells ("-") always go last.
+function sortKey(text) {
+  const t = text.trim().replace(/\u2212/g, "-");
+  if (t === "" || t === "-") return null;
+  const m = t.match(/^[+-]?(\d+\.?\d*|\.\d+)/);
+  return m ? parseFloat(m[0]) : t.toLowerCase();
+}
+
+function makeSortable(head, tbody) {
+  const ths = [...head.children];
+  ths.forEach((th, col) => {
+    th.classList.add("sortable");
+    th.title = "Sort";
+    th.addEventListener("click", () => {
+      const rows = [...tbody.children];
+      const keys = new Map(rows.map((r) => [r, sortKey(r.children[col] ? r.children[col].textContent : "")]));
+      const numeric = rows.some((r) => typeof keys.get(r) === "number");
+      const was = th.getAttribute("aria-sort");
+      const dir = was ? (was === "descending" ? "ascending" : "descending") : numeric ? "descending" : "ascending";
+      ths.forEach((x) => x.removeAttribute("aria-sort"));
+      th.setAttribute("aria-sort", dir);
+      const sign = dir === "ascending" ? 1 : -1;
+      rows.sort((a, b) => {
+        const x = keys.get(a), y = keys.get(b);
+        if (x === null || y === null) return x === y ? 0 : x === null ? 1 : -1;
+        if (typeof x !== typeof y) return typeof x === "number" ? -1 : 1;
+        return (typeof x === "number" ? x - y : x.localeCompare(y)) * sign;
+      });
+      tbody.append(...rows);
+    });
+  });
 }
 
 function statLine(row) {
@@ -196,6 +232,62 @@ function renderTargets(v) {
     false,
     h("p", { class: "note" }, "How much more you need in each category you're not yet likely to win, over the rest of the week."),
     table(["Cat", "Win %", "Edge", "To draw even", "To 70%", "Per game left"], rows)
+  );
+}
+
+function renderWhatIf(v) {
+  const w = v.what_if;
+  if (!w || !w.adds.length || !w.drops.length) return null;
+  const adds = [...w.adds].sort((a, b) => b.value - a.value);
+  const label = (p) => `${p.name} (${p.team}${p.health !== "ACTIVE" && p.health !== "NORMAL" ? ", " + (p.health === "DAY_TO_DAY" ? "DTD" : p.health) : ""}) ${signed(p.value, 2)}${p.waiver_until ? " · waivers to " + p.waiver_until : ""}`;
+  const search = h("input", { type: "search", placeholder: "Search free agents" });
+  const addSel = h("select", { "aria-label": "Add" });
+  const dropSel = h("select", { "aria-label": "Drop" }, w.drops.map((p) => h("option", { value: p.id }, label(p))));
+  const fillAdds = () => {
+    const q = search.value.trim().toLowerCase();
+    const keep = addSel.value;
+    addSel.replaceChildren(...adds.filter((p) => !q || p.name.toLowerCase().includes(q)).map((p) => h("option", { value: p.id, selected: String(p.id) === keep ? true : null }, label(p))));
+  };
+  const out = h("div", {});
+  const change = (x, d = 0, pctUnit = false) => {
+    const val = pctUnit ? Math.round(x * 100) : x;
+    return { node: (val > 0 ? "+" : "") + (pctUnit ? val + " pts" : Number(val).toFixed(d)), cls: val > 0 ? "good" : val < 0 ? "bad" : "" };
+  };
+  const draw = () => {
+    const r = w.results[`${addSel.value}:${dropSel.value}`];
+    if (!r) { out.replaceChildren(h("p", { class: "note" }, "No free agent matches.")); return; }
+    const [pMatch, expWins, usable, expGames] = r;
+    const pCats = r.slice(w.columns.length);
+    const b = w.base;
+    const diff = Math.round(pMatch * 100) - Math.round(b.p_win_matchup * 100);
+    out.replaceChildren(
+      stats(
+        stat("Matchup win chance", `${percent(b.p_win_matchup)} → ${percent(pMatch)}`, diff > 0 ? "good" : diff < 0 ? "bad" : ""),
+        stat("Expected categories", `${b.expected_wins.toFixed(1)} → ${expWins.toFixed(1)}`),
+        stat("Usable games", `${b.usable} → ${b.usable + usable}`),
+        stat("Expected games", `${num(b.expected_games)} → ${num(b.expected_games + expGames)}`)
+      ),
+      table(["Cat", "Now", "After", "Change", "Call after"], w.categories.map((cat, i) => {
+        const after = pCats[i];
+        const callAfter = after >= 0.7 ? "Likely win" : after <= 0.3 ? "Likely loss" : "Swing";
+        return { cells: [{ node: cat, cls: "strong" }, percent(b.p_win[i]), { node: [percent(after), probBar(after, CALL_CLASS[callAfter] || "warn")] }, change(after - b.p_win[i], 0, true), { node: callAfter, cls: CALL_CLASS[callAfter] || "warn" }] };
+      }))
+    );
+  };
+  search.addEventListener("input", () => { fillAdds(); draw(); });
+  addSel.addEventListener("change", draw);
+  dropSel.addEventListener("change", draw);
+  fillAdds();
+  draw();
+  return card(
+    "What if: try a pickup",
+    true,
+    h("p", { class: "note" }, "Pick a free agent to add and a player to drop. The rest of this matchup is projected again with him in your lineup from the day he can play; games already played stay as they are."),
+    h("div", { class: "form" },
+      h("label", { class: "field" }, h("span", {}, "Add"), search, addSel),
+      h("label", { class: "field" }, h("span", {}, "Drop"), dropSel)
+    ),
+    out
   );
 }
 
@@ -863,7 +955,7 @@ function render(view, demo) {
   // Some panels are absent (no matchup, no season totals yet): skip them.
   const sections = {
     today: [renderScoreboard(view), renderLineup(view), renderChanges(view), renderAlerts(view), renderAcquisitions(view)],
-    matchup: [renderMatchup(view), renderTargets(view), renderGameCounts(view), renderStrategy(view), renderAccuracy(view), renderSchedule(view), renderStreamPlan(view), renderSimulator(view), renderNextMatchup(view)],
+    matchup: [renderMatchup(view), renderTargets(view), renderWhatIf(view), renderGameCounts(view), renderStrategy(view), renderAccuracy(view), renderSchedule(view), renderStreamPlan(view), renderSimulator(view), renderNextMatchup(view)],
     roster: [renderMyRoster(view), renderAdvanced(view)],
     wire: [renderFreeAgents(view), renderTransactions(view), renderPopular(view)],
     league: [renderStrength(view), renderSeason(view), renderTrade(view), renderTeams(view)],

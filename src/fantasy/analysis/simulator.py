@@ -47,6 +47,82 @@ def _projected(ctx: Context, mine: SideProjection, theirs: SideProjection) -> li
     ]
 
 
+def _swap(ctx: Context, mine: SideProjection, fa_id: int, drop_id: int) -> SideProjection:
+    """My side re-projected with `fa_id` in place of `drop_id`, from the day
+    the pickup can play; what was played so far stays as it was."""
+    team = mine.team
+    start = playable_from(ctx.snap.players[fa_id], ctx)
+    roster = [s for s in team.roster if s.player_id != drop_id]
+    roster.append(RosterSpot(player_id=fa_id, slot_id=BENCH_SLOT))
+    return project_side(
+        ctx,
+        replace(team, roster=roster),
+        mine.side,
+        elapsed=mine.elapsed,
+        windows={fa_id: (start, None)} if start else None,
+    )
+
+
+WHAT_IF_ADDS = 120
+
+
+def what_if(
+    ctx: Context, mine: SideProjection, theirs: SideProjection, free_agent_ids: list[int]
+) -> dict:
+    """Every free agent with games left against every player I could drop:
+    each category's win chance, the matchup win chance and the games, so the
+    dashboard can show any add/drop pair without a server."""
+    cats = [r["cat"] for r in _projected(ctx, mine, theirs)]
+    base = _projected(ctx, mine, theirs)
+    base_outlook = matchup_outlook(base)
+    drops = sorted(
+        (s.player_id for s in mine.team.roster if s.slot_id != IR_SLOT),
+        key=lambda pid: ctx.values.get(pid, 0.0),
+    )
+    adds = free_agent_ids[:WHAT_IF_ADDS]
+    results: dict[str, list[float]] = {}
+    for fa_id in adds:
+        for drop_id in drops:
+            side = _swap(ctx, mine, fa_id, drop_id)
+            rows = _projected(ctx, side, theirs)
+            projected = {r["cat"]: r["p_win"] for r in rows}
+            outlook = matchup_outlook(rows)
+            results[f"{fa_id}:{drop_id}"] = [
+                round(outlook["p_win_matchup"], 3),
+                round(outlook["expected_wins"], 2),
+                side.usable_remaining - mine.usable_remaining,
+                round(side.expected_remaining - mine.expected_remaining, 1),
+                *(round(projected.get(cat, 0.0), 3) for cat in cats),
+            ]
+
+    def person(pid: int) -> dict:
+        player = ctx.snap.players[pid]
+        start = playable_from(player, ctx)
+        return {
+            "id": pid,
+            "name": player.name,
+            "team": player.pro_team,
+            "health": player.injury_status,
+            "value": round(ctx.valuation.mean(ctx.lines[pid], ctx.punt), 2),
+            "waiver_until": start.isoformat() if start else None,
+        }
+
+    return {
+        "categories": cats,
+        "base": {
+            "p_win_matchup": round(base_outlook["p_win_matchup"], 3),
+            "expected_wins": round(base_outlook["expected_wins"], 2),
+            "usable": mine.usable_remaining,
+            "expected_games": round(mine.expected_remaining, 1),
+            "p_win": [round(r["p_win"], 3) for r in base],
+        },
+        "adds": [person(pid) for pid in adds],
+        "drops": [person(pid) for pid in drops],
+        "columns": ["p_win_matchup", "expected_wins", "usable_change", "expected_games_change"],
+        "results": results,
+    }
+
+
 def simulate_moves(
     ctx: Context,
     mine: SideProjection,
@@ -69,15 +145,7 @@ def simulate_moves(
         start = playable_from(fa, ctx)
         best = None
         for drop_id in droppable:
-            roster = [s for s in team.roster if s.player_id != drop_id]
-            roster.append(RosterSpot(player_id=fa_id, slot_id=BENCH_SLOT))
-            side = project_side(
-                ctx,
-                replace(team, roster=roster),
-                mine.side,
-                elapsed=mine.elapsed,
-                windows={fa_id: (start, None)} if start else None,
-            )
+            side = _swap(ctx, mine, fa_id, drop_id)
             projected = _projected(ctx, side, theirs)
             outlook = matchup_outlook(projected)
             changes = sorted(
