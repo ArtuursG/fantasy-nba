@@ -235,3 +235,16 @@ def test_what_if_covers_every_add_and_drop_pair(view):
     move = view["moves"]["moves"][0]
     grid = w["results"][f"{move['add_id']}:{move['drop_id']}"]
     assert grid[0] == pytest.approx(move["p_win_after"], abs=0.001)
+
+
+def test_week_grid_marks_each_game_for_my_players(view):
+    grid = view["week_grid"]
+    assert len(grid["days"]) == 7
+    kinds = {c["kind"] for p in grid["players"] for c in p["cells"].values()}
+    assert {"start", "played"} <= kinds
+    assert "out" in kinds  # the demo's IR player
+    for p in grid["players"]:
+        assert p["games"] == len(p["cells"])
+        assert all(c["vs"] for c in p["cells"].values())
+    future = [d for d in grid["days"] if not d["past"]]
+    assert future and all(d["open_slots"] is not None for d in future)

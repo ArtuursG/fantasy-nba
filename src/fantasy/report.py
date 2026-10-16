@@ -213,6 +213,7 @@ class Report:
         self.alerts()
         self.matchup()
         self.game_counts()
+        self.week_grid()
         self.strategy()
         self.transactions()
         self.free_agents()
@@ -292,6 +293,42 @@ class Report:
                         for i in r["injuries"]
                     ),
                 )
+
+    def week_grid(self) -> None:
+        grid = self.view.get("week_grid")
+        if not grid or not grid["days"]:
+            return
+        code = {"start": "S", "doubt": "S?", "bench": "B", "out": "O", "played": "P", "missed": "x"}
+        self.section("MY WEEK BY DAY")
+        self.add(
+            "Each game as opponent + code: S starts, S? starts but doubtful, B no free slot, "
+            "O out, P played, x did not play. @ = away.",
+            "",
+        )
+        days = grid["days"]
+        self.lines.extend(
+            table(
+                ["Player", "G", "Starts"] + [d["label"] for d in days],
+                (
+                    [p["name"] + (" (IR)" if p["ir"] else ""), p["games"], p["starts"]]
+                    + [
+                        f"{c['vs']} {code[c['kind']]}"
+                        if (c := p["cells"].get(str(d["sp"])))
+                        else "-"
+                        for d in days
+                    ]
+                    for p in grid["players"]
+                ),
+            )
+        )
+        self.add(
+            "",
+            "My open slots: "
+            + ", ".join(
+                f"{d['label']} {d['open_slots']}" for d in days if d["open_slots"] is not None
+            ),
+            "NBA games: " + ", ".join(f"{d['label']} {d['nba_games']}" for d in days),
+        )
 
     def header(self) -> None:
         m = self.meta

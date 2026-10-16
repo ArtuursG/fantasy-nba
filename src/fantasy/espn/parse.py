@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from datetime import timedelta
+from datetime import date, timedelta
 from typing import Any
 
 from fantasy.espn.constants import (
@@ -69,6 +69,9 @@ def parse_bundle(raw: dict[str, Any], team_hint: str | None, demo: bool = False)
     season = league.season
     pro_teams, pro_games = parse_pro_schedule(raw.get("pro_schedule"))
     sp_dates = sp_dates_from((g.sp, g.date) for g in pro_games)
+    league.matchup_periods = matchup_scoring_periods(
+        league.matchup_periods, sp_dates, league.first_scoring_period, league.final_scoring_period
+    )
 
     players: dict[int, Player] = {}
     teams = parse_teams(league_raw, players, season)
@@ -619,3 +622,36 @@ def find_team(teams: list[Team], hint: str | None) -> int | None:
                 return team.id
     partial = [t.id for t in teams if wanted in t.name.casefold()]
     return partial[0] if len(partial) == 1 else None
+
+
+MAX_WEEKS_PER_MATCHUP = 3
+
+
+def matchup_scoring_periods(
+    periods: dict[int, list[int]], sp_dates: dict[int, date], first: int, final: int
+) -> dict[int, list[int]]:
+    """Matchup period -> its scoring periods (days).
+
+    ESPN's matchupPeriods lists the weeks each matchup covers: one, or two
+    or three around the All-Star break and in the playoffs. A week runs
+    Monday to Sunday, the first from the season's first scoring period to
+    the first Sunday. Lists that are already days are kept as they are.
+    """
+    if not periods or not sp_dates:
+        return periods
+    if max(len(v) for v in periods.values()) > MAX_WEEKS_PER_MATCHUP:
+        return periods
+    last = final or max(sp_dates)
+    weeks: dict[int, list[int]] = {}
+    week = 1
+    for sp in range(first, last + 1):
+        day = date_for_sp(sp_dates, sp)
+        if day is None:
+            continue
+        if sp > first and day.weekday() == 0:
+            week += 1
+        weeks.setdefault(week, []).append(sp)
+    return {
+        period: sorted(sp for w in ids for sp in weeks.get(w, []))
+        for period, ids in periods.items()
+    }

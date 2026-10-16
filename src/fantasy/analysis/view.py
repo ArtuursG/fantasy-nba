@@ -38,6 +38,7 @@ from fantasy.analysis.simulator import simulate_moves, what_if
 from fantasy.analysis.stats import REVERSE_CATS, average, usage_proxy
 from fantasy.analysis.strategy import category_strategy, next_matchup
 from fantasy.analysis.trade import trade_targets
+from fantasy.analysis.weekgrid import week_grid
 from fantasy.espn.constants import (
     BENCH_SLOT,
     C_SLOT,
@@ -402,6 +403,7 @@ def build_view(
     return {
         "game_counts": league_game_counts(ctx),
         "what_if": whatif,
+        "week_grid": week_grid(ctx, me, snap.team(opp_id) if opp_id else None) if me else None,
         "meta": {
             "date": ctx.now.astimezone(tz).date().isoformat(),
             "fetched_at": ctx.now.astimezone(tz).strftime("%Y-%m-%d %H:%M"),

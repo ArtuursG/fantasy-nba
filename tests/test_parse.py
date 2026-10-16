@@ -275,3 +275,20 @@ def test_unknown_team_hint_is_a_warning(raw_today):
     snapshot = parse_bundle(raw_today, "No Such Team")
     assert snapshot.my_team_id is None
     assert "No Such Team" in snapshot.warnings[0]
+
+
+def test_matchup_weeks_become_monday_to_sunday_scoring_periods():
+    from datetime import date, timedelta
+
+    from fantasy.espn.parse import matchup_scoring_periods
+
+    # Season opens on a Tuesday; matchup 3 covers two weeks (All-Star break).
+    start = date(2026, 10, 20)
+    sp_dates = {sp: start + timedelta(days=sp - 1) for sp in range(1, 40)}
+    periods = matchup_scoring_periods({1: [1], 2: [2], 3: [3, 4]}, sp_dates, 1, 39)
+    assert periods[1] == list(range(1, 7))  # Tue 10/20 - Sun 10/25
+    assert periods[2] == list(range(7, 14))  # Mon 10/26 - Sun 11/1
+    assert periods[3] == list(range(14, 28))
+    # Already days: left alone.
+    days = {1: list(range(1, 8))}
+    assert matchup_scoring_periods(days, sp_dates, 1, 39) == days

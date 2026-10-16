@@ -859,9 +859,8 @@ class DemoWorld:
                 "acquisitionSettings": {"matchupAcquisitionLimit": 5, "waiverHours": 24},
                 "scheduleSettings": {
                     "matchupPeriodCount": 20,
-                    "matchupPeriods": {
-                        str(k): list(range(7 * k - 6, 7 * k + 1)) for k in range(1, 21)
-                    },
+                    # As ESPN sends it: the weeks each matchup covers.
+                    "matchupPeriods": {str(k): [k] for k in range(1, 21)},
                 },
             },
             "members": [

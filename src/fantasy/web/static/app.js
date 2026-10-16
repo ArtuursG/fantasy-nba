@@ -291,6 +291,47 @@ function renderWhatIf(v) {
   );
 }
 
+const WEEK_KINDS = {
+  start: "Starts",
+  doubt: "Starts, doubtful",
+  bench: "No free slot",
+  out: "Out",
+  played: "Played",
+  missed: "Did not play",
+};
+
+function renderWeekGrid(v) {
+  const g = v.week_grid;
+  if (!g || !g.days.length) return null;
+  const head = h("tr", {},
+    h("th", { class: "text" }, "Player"), h("th", {}, "G"), h("th", {}, "Starts"),
+    g.days.map((d) => h("th", { class: "wk-day" + (d.past ? " past" : ""), title: `${d.nba_games} NBA games` }, d.label.split(" ")[0], h("br"), h("small", {}, d.label.split(" ")[1]))));
+  const tbody = h("tbody", {}, g.players.map((p) => h("tr", { class: p.ir ? "ir" : null },
+    h("td", { class: "text strong" }, p.name, h("small", { class: "muted" }, " " + p.positions + (p.ir ? " · IR" : ""))),
+    h("td", {}, String(p.games)),
+    h("td", {}, String(p.starts)),
+    g.days.map((d) => {
+      const c = p.cells[String(d.sp)];
+      return c ? h("td", { class: "wk wk-" + c.kind, title: WEEK_KINDS[c.kind] }, c.vs) : h("td", { class: "wk" }, "");
+    })
+  )));
+  makeSortable(head, tbody);
+  const foot = (label, values, cls) => h("tr", { class: "wk-foot" }, h("td", { class: "text", colspan: 3 }, label), values.map((x, i) => h("td", { class: typeof cls === "function" ? cls(g.days[i]) : null }, x === null ? "-" : String(x))));
+  const tfoot = h("tfoot", {},
+    foot("My starts", g.days.map((d) => d.starts)),
+    foot("Opponent starts", g.days.map((d) => d.opp_starts)),
+    foot("My open slots", g.days.map((d) => d.open_slots), (d) => (d.open_slots ? "wk-open" : null)),
+    foot("NBA games", g.days.map((d) => d.nba_games), (d) => (d.nba_games <= 5 ? "warn" : d.nba_games >= 10 ? "good" : null))
+  );
+  return card(
+    "The week, day by day",
+    true,
+    h("div", { class: "chips" }, Object.entries(WEEK_KINDS).map(([k, label]) => h("span", { class: "chip wk-key wk-" + k }, label))),
+    h("div", { class: "scroll" }, h("table", { class: "week" }, h("thead", {}, head), tbody, tfoot)),
+    h("p", { class: "note" }, "A day with open slots is a day a pickup adds games; a day with few NBA games is when streamers are easiest to fit, and many games means your bench gets squeezed. Cells show the opponent, @ for away.")
+  );
+}
+
 function renderGameCounts(v) {
   const rows = v.game_counts;
   if (!rows || !rows.length) return null;
@@ -955,7 +996,7 @@ function render(view, demo) {
   // Some panels are absent (no matchup, no season totals yet): skip them.
   const sections = {
     today: [renderScoreboard(view), renderLineup(view), renderChanges(view), renderAlerts(view), renderAcquisitions(view)],
-    matchup: [renderMatchup(view), renderTargets(view), renderWhatIf(view), renderGameCounts(view), renderStrategy(view), renderAccuracy(view), renderSchedule(view), renderStreamPlan(view), renderSimulator(view), renderNextMatchup(view)],
+    matchup: [renderMatchup(view), renderTargets(view), renderWhatIf(view), renderGameCounts(view), renderWeekGrid(view), renderStrategy(view), renderAccuracy(view), renderSchedule(view), renderStreamPlan(view), renderSimulator(view), renderNextMatchup(view)],
     roster: [renderMyRoster(view), renderAdvanced(view)],
     wire: [renderFreeAgents(view), renderTransactions(view), renderPopular(view)],
     league: [renderStrength(view), renderSeason(view), renderTrade(view), renderTeams(view)],
