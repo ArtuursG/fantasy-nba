@@ -56,6 +56,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     daily.add_argument("--compact", action="store_true")
     daily.add_argument("--out", type=Path, help="Default: data/reports/<date>.md")
+    daily.add_argument(
+        "--summary", type=Path, help="Also append today's lineup check to this Markdown file"
+    )
+    daily.add_argument(
+        "--notify", action="store_true", help="Send the lineup alert to Telegram, if set up"
+    )
     return parser
 
 
@@ -105,6 +111,15 @@ def main(argv: list[str] | None = None) -> int:
             text = app.report(compact=args.compact) or ""
             day = local_date(snapshot.fetched_at, config.tz).isoformat()
             _write(text, args.out or config.data_dir / "reports" / f"{day}.md")
+            if args.summary:
+                with args.summary.open("a", encoding="utf-8") as summary:
+                    summary.write(
+                        f"## Fantasy daily, {day}\n\n```text\n{app.alert(always=True) or ''}\n```\n"
+                    )
+            alert = app.alert()
+            if args.notify and alert and config.telegram_token and config.telegram_chat_id:
+                app.send_alert(alert)
+                print("Sent to Telegram.")
             return 0
         text = app.report(compact=args.compact)
         if text is None:

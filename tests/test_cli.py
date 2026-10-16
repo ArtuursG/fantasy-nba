@@ -31,6 +31,15 @@ def test_daily_writes_a_dated_report(env):
     assert len(reports) == 1
 
 
+def test_daily_appends_the_lineup_check_to_a_summary(env):
+    summary = Path(env, "summary.md")
+    summary.write_text("earlier step\n", encoding="utf-8")
+    assert main(["daily", "--demo", "--summary", str(summary), "--notify"]) == 0
+    text = summary.read_text(encoding="utf-8")
+    assert text.startswith("earlier step\n## Fantasy daily, ")
+    assert "```text" in text
+
+
 def test_report_before_any_refresh_fails_cleanly(env, capsys):
     assert main(["report"]) == 1
     assert "fantasy refresh" in capsys.readouterr().err

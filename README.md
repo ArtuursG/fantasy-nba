@@ -129,6 +129,20 @@ The alert only comes when there is something to do: who to start and for
 whom, who to bench, day-to-day starters to check, IR moves and injuries on
 your team since yesterday.
 
+## Running on GitHub every morning
+
+`.github/workflows/daily.yml` reads the league at 05:52 UTC every day (or on
+demand: Actions, Daily report, Run workflow), keeps the snapshot history in the
+Actions cache and attaches `full.md` and `compact.md` to the run as the
+`fantasy-report` artifact. The run's summary page shows the lineup check.
+
+It needs two repository secrets (Settings, Secrets and variables, Actions):
+`ESPN_S2` and `ESPN_SWID`. Optional: `TELEGRAM_BOT_TOKEN` and
+`TELEGRAM_CHAT_ID` secrets for the lineup alert, and a `FANTASY_PUNT`
+variable. The league link is in the workflow file. If the run fails with
+"ESPN refused access", the cookies have expired: copy new ones into the
+secrets.
+
 ## The report
 
 Same sections in the same order every day:
