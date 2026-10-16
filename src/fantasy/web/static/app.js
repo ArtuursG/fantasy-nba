@@ -29,6 +29,9 @@ const STATS = [["3PM", "tpm"], ["REB", "reb"], ["AST", "ast"], ["STL", "stl"], [
 const CALL_CLASS = { "Likely win": "good", "Likely loss": "bad" };
 
 let reportText = "";
+// Set by static/data.js when the dashboard is hosted as static files
+// (`fantasy export`): no server, so no refresh, settings or trade evaluator.
+const STATIC = window.FANTASY_STATIC || null;
 
 function setStatus(text, kind) {
   const el = $("status");
@@ -337,12 +340,14 @@ function renderTrade(v) {
     tt && tt.sell.length ? [h("h3", {}, "Sell (worth more to the league)"), h("ul", {}, tt.sell.map(line))] : null,
     tt && tt.needs.length ? [h("h3", {}, `Help in your weakest categories (${tt.needs.join(", ")})`), h("ul", {}, tt.need_targets.slice(0, 6).map(line))] : null,
     h("h3", {}, "Try a trade"),
-    h("div", { class: "form" },
-      h("div", { class: "field" }, h("span", {}, "You give"), h("div", { class: "picklist" }, giveBoxes.map(([, label]) => label))),
-      h("div", { class: "field" }, h("span", {}, "You get from"), partner, getList)
-    ),
-    go,
-    result
+    STATIC ? h("p", { class: "note" }, "The trade evaluator needs the app running on a computer (uv run fantasy serve).") : [
+      h("div", { class: "form" },
+        h("div", { class: "field" }, h("span", {}, "You give"), h("div", { class: "picklist" }, giveBoxes.map(([, label]) => label))),
+        h("div", { class: "field" }, h("span", {}, "You get from"), partner, getList)
+      ),
+      go,
+      result,
+    ]
   );
 }
 
@@ -772,6 +777,7 @@ const TABS = [
   ["report", "Report"],
   ["setup", "Setup"],
 ];
+if (STATIC) TABS.splice(TABS.findIndex(([key]) => key === "setup"), 1);
 
 function currentTab() {
   const key = location.hash.slice(1);
@@ -834,7 +840,7 @@ function render(view, demo) {
     league: [renderStrength(view), renderSeason(view), renderTrade(view), renderTeams(view)],
     rankings: [renderRankings(view)],
     report: [renderReport()],
-    setup: [renderSettings()],
+    setup: STATIC ? [] : [renderSettings()],
   };
   renderTabs({ today: fixes });
   app.append(...TABS.map(([key]) => h("div", { class: "section", "data-tab": key, role: "tabpanel" }, sections[key].filter(Boolean))));
@@ -845,10 +851,13 @@ function render(view, demo) {
 }
 
 async function loadReport() {
-  const compact = $("compact").checked ? "1" : "0";
-  const res = await fetch("/api/report?compact=" + compact);
-  if (!res.ok) return;
-  reportText = await res.text();
+  if (STATIC) {
+    reportText = STATIC.report[$("compact").checked ? "compact" : "full"] || "";
+  } else {
+    const res = await fetch("/api/report?compact=" + ($("compact").checked ? "1" : "0"));
+    if (!res.ok) return;
+    reportText = await res.text();
+  }
   const area = $("report-text");
   if (area) area.value = reportText;
   const size = $("report-size");
@@ -858,6 +867,11 @@ async function loadReport() {
 }
 
 async function loadState() {
+  if (STATIC) {
+    $("refresh").hidden = true;
+    render(STATIC.view, STATIC.demo);
+    return;
+  }
   settingsData = await (await fetch("/api/settings")).json();
   const res = await fetch("/api/state");
   const data = await res.json();

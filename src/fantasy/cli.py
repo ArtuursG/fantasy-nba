@@ -1,4 +1,4 @@
-"""Command line: serve | refresh | report | check | daily."""
+"""Command line: serve | refresh | report | check | daily | export."""
 
 from __future__ import annotations
 
@@ -64,6 +64,10 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Send the report file with the lineup check to Telegram, if set up",
     )
+    export = sub.add_parser(
+        "export", parents=[common], help="Write the dashboard as static files for hosting"
+    )
+    export.add_argument("--out", type=Path, default=Path("site"), help="Default: site/")
     return parser
 
 
@@ -121,6 +125,16 @@ def main(argv: list[str] | None = None) -> int:
             if args.notify and config.telegram_token and config.telegram_chat_id:
                 app.send_report_file(f"fantasy-report-{day}.md", text, app.alert(always=True) or "")
                 print("Report sent to Telegram.")
+            return 0
+        if args.command == "export":
+            from fantasy.web.export import ExportError, export_site
+
+            try:
+                out = export_site(app, args.out)
+            except ExportError as exc:
+                print(exc, file=sys.stderr)
+                return 1
+            print(f"Dashboard written to {out}")
             return 0
         text = app.report(compact=args.compact)
         if text is None:

@@ -1,3 +1,4 @@
+import json
 from datetime import date
 from pathlib import Path
 
@@ -118,3 +119,20 @@ def test_settings_are_saved_to_dev_vars(env, monkeypatch):
     assert app.config.espn_s2 == "AEB%2Fs2" and app.config.punt == ()
     with pytest.raises(ConfigError):
         app.update_settings({"league_url": "https://fantasy.espn.com/basketball/players/add"})
+
+
+def test_export_writes_a_static_dashboard(env):
+    out = Path(env, "site")
+    assert main(["export", "--demo", "--out", str(out)]) == 1  # no snapshot yet
+    assert main(["refresh", "--demo"]) == 0
+    assert main(["export", "--demo", "--out", str(out)]) == 0
+    page = (out / "index.html").read_text(encoding="utf-8")
+    assert page.index('"static/data.js"') < page.index('"static/app.js"')
+    assert '"/static/' not in page
+    assert 'content="noindex"' in page
+    data = (out / "static" / "data.js").read_text(encoding="utf-8")
+    payload = json.loads(data.removeprefix("window.FANTASY_STATIC = ").rstrip().rstrip(";"))
+    assert payload["report"]["full"].startswith("# DAILY FANTASY REPORT")
+    assert payload["view"]["meta"]["my_team"]
+    assert (out / "static" / "fonts" / "big-shoulders-latin.woff2").exists()
+    assert not (out / "static" / "index.html").exists()

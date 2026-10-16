@@ -3,7 +3,9 @@ name: Daily report
 # Reads the league every morning, keeps the snapshot history in the Actions
 # cache (so "since yesterday" and "vs 7 days ago" work) and attaches the
 # report to the run. Needs the ESPN_S2 and ESPN_SWID repository secrets;
-# TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are optional.
+# TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are optional. When the repository is
+# public, the dashboard is also published on GitHub Pages (Settings, Pages,
+# Source: GitHub Actions).
 
 on:
   schedule:
@@ -13,6 +15,8 @@ on:
 
 permissions:
   contents: read
+  pages: write
+  id-token: write
 
 concurrency:
   group: daily-report
@@ -57,3 +61,22 @@ jobs:
           name: fantasy-report
           path: reports/
           retention-days: 14
+      - name: Build the dashboard
+        if: ${{ !github.event.repository.private }}
+        run: uv run fantasy export --out site
+      - name: Prepare the dashboard for GitHub Pages
+        if: ${{ !github.event.repository.private }}
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  pages:
+    needs: report
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v4
+        id: deployment

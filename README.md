@@ -141,7 +141,14 @@ It needs two repository secrets (Settings, Secrets and variables, Actions):
 `TELEGRAM_CHAT_ID` secrets: then every run also sends the full report to
 Telegram as a file, with the lineup check as its caption (on the phone:
 open the file, Share, ChatGPT). And a `FANTASY_PUNT`
-variable. The league link is in the workflow file. If the run fails with
+variable. The league link is in the workflow file.
+
+When the repository is public, each run also publishes the dashboard on
+GitHub Pages at https://artuursg.github.io/fantasy-nba-report/ (turn it on
+once: Settings, Pages, Source: GitHub Actions). That page is built with
+`fantasy export`: the same dashboard, read-only, without Refresh, Setup or
+the trade evaluator. It holds the league data but never the cookies; anyone
+with the link can open it. If the run fails with
 "ESPN refused access", the cookies have expired: copy new ones into the
 secrets.
 
