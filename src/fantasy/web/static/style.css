@@ -374,6 +374,7 @@ tr.mine td { background: var(--mine); }
 tr.mine td:first-child { box-shadow: inset 3px 0 var(--spot); padding-left: 8px; }
 td.wrap { white-space: normal; min-width: 220px; }
 td.strong { font-weight: 600; }
+tr.pair-end td { border-bottom: 2px solid var(--ink-2); }
 
 /* Heat: category ranks 1-10 and z-score values */
 

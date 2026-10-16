@@ -186,3 +186,37 @@ def test_next_matchup_preview(view):
     assert len(nm["days"]) == 7 and nm["dates"][0].startswith("Mon")
     assert nm["games"]["me"]["usable"] <= nm["games"]["me"]["scheduled"]
     assert 0 <= nm["outlook"]["p_win_matchup"] <= 1
+
+
+def test_play_chance_discounts_doubtful_players_and_drops_out_ones():
+    from datetime import date
+
+    from fantasy.analysis.schedule import play_chance
+
+    today = date(2026, 10, 15)
+    tomorrow, later = date(2026, 10, 16), date(2026, 10, 18)
+    healthy = Player(id=1, name="A")
+    dtd = Player(id=2, name="B", injury_status="DAY_TO_DAY")
+    out = Player(id=3, name="C", injury_status="OUT")
+    back = Player(id=4, name="D", injury_status="OUT", expected_return="2026-10-17")
+    assert play_chance(healthy, today, today) == 1.0
+    assert play_chance(dtd, tomorrow, today) == pytest.approx(0.7)
+    assert play_chance(dtd, later, today) == pytest.approx(0.85)
+    assert play_chance(out, later, today) == 0.0
+    assert play_chance(back, tomorrow, today) == 0.0
+    assert play_chance(back, later, today) == pytest.approx(0.7)
+
+
+def test_game_counts_cover_every_pairing_with_mine_first(view):
+    rows = view["game_counts"]
+    assert len(rows) == 10
+    assert rows[0]["is_me"] and rows[1]["team"] == rows[0]["opponent"]
+    for a, b in zip(rows[::2], rows[1::2], strict=True):
+        assert a["edge"] == pytest.approx(-b["edge"])
+    for r in rows:
+        assert r["expected_remaining"] <= r["usable_remaining"] <= r["scheduled_remaining"]
+        assert r["expected_total"] == pytest.approx(r["played"] + r["expected_remaining"], abs=0.11)
+    mine = view["matchup"]["games"]["me"]
+    # The demo has a DTD player on my team and an OUT one on IR.
+    assert mine["uncertain_games"] > 0
+    assert mine["expected_remaining"] < mine["usable_remaining"]

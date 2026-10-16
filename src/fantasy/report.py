@@ -212,6 +212,7 @@ class Report:
         self.my_roster()
         self.alerts()
         self.matchup()
+        self.game_counts()
         self.strategy()
         self.transactions()
         self.free_agents()
@@ -234,6 +235,63 @@ class Report:
         self.accuracy()
         self.notes()
         return "\n".join(self.lines).strip() + "\n"
+
+    def game_counts(self) -> None:
+        rows = self.view.get("game_counts") or []
+        if not rows:
+            return
+        self.section("GAMES THIS MATCHUP")
+        self.add(
+            "Played = games so far (box scores of the current roster, max one per starting "
+            "slot a day). Left = remaining games that fit a starting slot; Expected = those "
+            "weighted by the chance the player plays (DTD 70% today and tomorrow, 85% after; "
+            "Questionable 50%; Doubtful 20%; OUT 0 until the expected return). Total = "
+            "Played + Expected. OUT = games lost to OUT players; No slot = games with no "
+            "free slot.",
+            "",
+        )
+        self.lines.extend(
+            table(
+                [
+                    "Team",
+                    "Opponent",
+                    "Played",
+                    "Left",
+                    "Expected",
+                    "Total",
+                    "Edge",
+                    "OUT",
+                    "Uncertain",
+                    "No slot",
+                ],
+                (
+                    [
+                        r["team"] + (" (me)" if r.get("is_me") else ""),
+                        r.get("opponent", "-"),
+                        r["played"],
+                        r["usable_remaining"],
+                        f"{r['expected_remaining']:.1f}",
+                        f"{r['expected_total']:.1f}",
+                        signed(r.get("edge")),
+                        r["out_games"],
+                        r["uncertain_games"],
+                        r["no_slot_games"],
+                    ]
+                    for r in rows
+                ),
+            )
+        )
+        for r in rows[:2]:
+            if r["injuries"]:
+                self.add(
+                    "",
+                    f"Injuries behind the gap, {r['team']}: "
+                    + "; ".join(
+                        f"{i['name']} {i['status']} ({i['games']} games, "
+                        f"-{num(i['lost'])} expected)"
+                        for i in r["injuries"]
+                    ),
+                )
 
     def header(self) -> None:
         m = self.meta
@@ -486,8 +544,10 @@ class Report:
             f"Swing: {', '.join(mu['swing']) or 'none'}",
             f"Projected result: {mu['projected_record']} (W-L-T)",
             f"Games left: me {games['me']['scheduled_remaining']} scheduled / "
-            f"{games['me']['usable_remaining']} usable; opponent "
-            f"{games['opp']['scheduled_remaining']} / {games['opp']['usable_remaining']}",
+            f"{games['me']['usable_remaining']} usable / "
+            f"{games['me']['expected_remaining']:.1f} expected; opponent "
+            f"{games['opp']['scheduled_remaining']} / {games['opp']['usable_remaining']} / "
+            f"{games['opp']['expected_remaining']:.1f}",
         )
         outlook = mu["outlook"]
         at_least = {int(k): v for k, v in outlook["p_at_least"].items()}

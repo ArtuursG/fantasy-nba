@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import date
 
 from fantasy.analysis.context import Context
-from fantasy.analysis.schedule import DayPlan, plan_days
+from fantasy.analysis.schedule import DayPlan, plan_days, starting_slots
 from fantasy.analysis.stats import CAT_FIELDS, PCT_FIELDS, REVERSE_CATS
 from fantasy.espn.constants import IR_SLOT, SLOT_NAMES, UNAVAILABLE_STATUSES
 from fantasy.models import COUNTING_FIELDS, MatchupSide, Team
@@ -32,6 +32,7 @@ class SideProjection:
     remaining_plans: list[DayPlan]
     remaining: dict[str, float] = field(default_factory=dict)
     elapsed: dict[str, float] = field(default_factory=dict)
+    played_plans: list[DayPlan] = field(default_factory=list)
 
     @property
     def scheduled_remaining(self) -> int:
@@ -41,14 +42,20 @@ class SideProjection:
     def usable_remaining(self) -> int:
         return sum(len(p.started) for p in self.remaining_plans)
 
+    @property
+    def expected_remaining(self) -> float:
+        """Usable games left, each weighted by the chance the player plays."""
+        return sum(p.chance.get(pid, 1.0) for p in self.remaining_plans for pid in p.started)
+
 
 def _sum_lines(ctx: Context, plans: list[DayPlan]) -> dict[str, float]:
     totals = dict.fromkeys(COUNTING_FIELDS, 0.0)
     for plan in plans:
         for player_id in plan.started:
             line = ctx.lines[player_id]
+            weight = plan.chance.get(player_id, 1.0)
             for name in COUNTING_FIELDS:
-                totals[name] += getattr(line, name)
+                totals[name] += getattr(line, name) * weight
     return totals
 
 
@@ -66,8 +73,12 @@ def project_side(
     days ahead; `windows` bounds players' days on the roster."""
     sps = sps or ctx.sps
     remaining = plan_days(ctx.calendar, ctx.snap, team, ctx.values, sps, ctx.now, windows=windows)
+    played: list[DayPlan] = []
     if elapsed is None:
         played = plan_days(ctx.calendar, ctx.snap, team, ctx.values, sps, ctx.now, remaining=False)
+        # Past games: the player either played or didn't, the box score knows.
+        for plan in played:
+            plan.chance = {}
         elapsed = _sum_lines(ctx, played)
     return SideProjection(
         team=team,
@@ -75,7 +86,97 @@ def project_side(
         remaining_plans=remaining,
         remaining=_sum_lines(ctx, remaining),
         elapsed=elapsed,
+        played_plans=played,
     )
+
+
+def played_games(ctx: Context, side: SideProjection) -> int:
+    """Games so far this matchup, estimated: players on the roster as it
+    stands now (IR aside) with a box score that day, at most one per starting
+    slot. ESPN's matchup data has no games-played count."""
+    slots = len(starting_slots(ctx.snap.league.lineup_slots))
+    roster = [
+        ctx.snap.players[s.player_id]
+        for s in side.team.roster
+        if s.slot_id != IR_SLOT and s.player_id in ctx.snap.players
+    ]
+    count = 0
+    for plan in side.played_plans:
+        played = sum(1 for p in roster if any(g.sp == plan.sp and g.played for g in p.games))
+        count += min(played, slots)
+    return count
+
+
+def game_count(ctx: Context, side: SideProjection) -> dict:
+    """Games this matchup for one team, and the injured players behind the gap
+    between scheduled and expected games."""
+    played = played_games(ctx, side)
+    expected = side.expected_remaining
+    out_games: dict[int, int] = {}
+    doubtful: dict[int, list[float]] = {}
+    for plan in side.remaining_plans:
+        for pid in plan.unavailable:
+            out_games[pid] = out_games.get(pid, 0) + 1
+        for pid in plan.started:
+            if plan.chance.get(pid, 1.0) < 1.0:
+                doubtful.setdefault(pid, []).append(plan.chance[pid])
+    notes = []
+    for pid, games in sorted(out_games.items(), key=lambda kv: -kv[1]):
+        player = ctx.snap.players[pid]
+        notes.append(
+            {"name": player.name, "status": player.injury_status, "games": games, "lost": games}
+        )
+    for pid, chances in sorted(doubtful.items(), key=lambda kv: -len(kv[1])):
+        player = ctx.snap.players[pid]
+        notes.append(
+            {
+                "name": player.name,
+                "status": player.injury_status,
+                "games": len(chances),
+                "lost": round(len(chances) - sum(chances), 1),
+            }
+        )
+    usable = side.usable_remaining
+    return {
+        "team_id": side.team.id,
+        "team": side.team.name,
+        "played": played,
+        "scheduled_remaining": side.scheduled_remaining,
+        "usable_remaining": usable,
+        "expected_remaining": round(expected, 1),
+        "expected_total": round(played + expected, 1),
+        "out_games": sum(out_games.values()),
+        "uncertain_games": sum(len(c) for c in doubtful.values()),
+        "no_slot_games": side.scheduled_remaining - usable - sum(out_games.values()),
+        "injuries": notes,
+    }
+
+
+def league_game_counts(ctx: Context) -> list[dict]:
+    """Game counts for every pairing of the current matchup, mine first."""
+    rows = []
+    seen: set[int] = set()
+    for matchup in ctx.snap.matchups:
+        if matchup.period != ctx.snap.league.matchup_period or matchup.away is None:
+            continue
+        pair = []
+        for side in (matchup.home, matchup.away):
+            team = ctx.snap.team(side.team_id)
+            if team is None or team.id in seen:
+                continue
+            seen.add(team.id)
+            pair.append(game_count(ctx, project_side(ctx, team, side)))
+        if len(pair) == 2:
+            pair[0]["opponent"], pair[1]["opponent"] = pair[1]["team"], pair[0]["team"]
+            pair[0]["edge"] = round(pair[0]["expected_total"] - pair[1]["expected_total"], 1)
+            pair[1]["edge"] = -pair[0]["edge"]
+            mine = ctx.snap.my_team_id in (pair[0]["team_id"], pair[1]["team_id"])
+            if mine and pair[1]["team_id"] == ctx.snap.my_team_id:
+                pair.reverse()
+            for row in pair:
+                row["is_me"] = row["team_id"] == ctx.snap.my_team_id
+            rows = pair + rows if mine else rows + pair
+    return rows
 
 
 def _normal_cdf(z: float) -> float:
@@ -281,16 +382,7 @@ def analyze_matchup(ctx: Context, mine: SideProjection, theirs: SideProjection) 
         "likely_losses": [r["cat"] for r in projected if r["call"] == "Likely loss"],
         "swing": [r["cat"] for r in projected if r["call"] == "Swing"],
         "projected_record": _record(projected),
-        "games": {
-            "me": {
-                "scheduled_remaining": mine.scheduled_remaining,
-                "usable_remaining": mine.usable_remaining,
-            },
-            "opp": {
-                "scheduled_remaining": theirs.scheduled_remaining,
-                "usable_remaining": theirs.usable_remaining,
-            },
-        },
+        "games": {"me": game_count(ctx, mine), "opp": game_count(ctx, theirs)},
         "attempts_estimated": estimated_attempts,
         "outlook": matchup_outlook(projected),
         "targets": targets(projected, mine),

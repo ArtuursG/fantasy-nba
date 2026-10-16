@@ -77,6 +77,23 @@ def is_available(player: Player, day: date) -> bool:
     return bool(player.expected_return) and date.fromisoformat(player.expected_return) <= day
 
 
+# Chance that a player with this status plays a given game. DTD and the like
+# count at this weight for today and tomorrow and halfway back to 1 after
+# that; OUT counts 0 until the expected return, then RETURN_CHANCE.
+PLAY_CHANCE = {"PROBABLE": 0.9, "DAY_TO_DAY": 0.7, "QUESTIONABLE": 0.5, "DOUBTFUL": 0.2}
+RETURN_CHANCE = 0.7
+NEAR_DAYS = 2
+
+
+def play_chance(player: Player, day: date, today: date) -> float:
+    if player.injury_status in UNAVAILABLE_STATUSES:
+        return RETURN_CHANCE if is_available(player, day) else 0.0
+    chance = PLAY_CHANCE.get(player.injury_status, 1.0)
+    if (day - today).days >= NEAR_DAYS:
+        chance = 1 - (1 - chance) / 2
+    return chance
+
+
 def starting_slots(lineup_slots: dict[int, int]) -> list[int]:
     """Slot instances, specific ones first and UTIL last."""
     order = sorted(
@@ -157,6 +174,8 @@ class DayPlan:
     unavailable: list[int]
     open_slots: list[int]
     lineup: Lineup
+    # Chance each available player plays (1.0 when healthy).
+    chance: dict[int, float] = field(default_factory=dict)
 
     @property
     def volume(self) -> str:
@@ -193,6 +212,7 @@ def plan_days(
         for s in team.roster
         if s.slot_id != IR_SLOT and s.player_id in snapshot.players
     ]
+    today = now.date()
     plans = []
     for sp in sps:
         day = calendar.date_of(sp)
@@ -223,6 +243,7 @@ def plan_days(
                 unavailable=[p.id for p in playing if p not in available],
                 open_slots=lineup.open_slots,
                 lineup=lineup,
+                chance={p.id: play_chance(p, day, today) for p in available},
             )
         )
     return plans

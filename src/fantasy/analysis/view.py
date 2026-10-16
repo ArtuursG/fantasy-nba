@@ -18,6 +18,7 @@ from fantasy.analysis.matchup import (
     SideProjection,
     analyze_matchup,
     day_rows,
+    league_game_counts,
     project_side,
     sides_for,
     team_strength,
@@ -397,6 +398,7 @@ def build_view(
     alert_ids = [r["player_id"] for r in top_fa]
 
     return {
+        "game_counts": league_game_counts(ctx),
         "meta": {
             "date": ctx.now.astimezone(tz).date().isoformat(),
             "fetched_at": ctx.now.astimezone(tz).strftime("%Y-%m-%d %H:%M"),

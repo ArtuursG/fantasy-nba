@@ -134,7 +134,7 @@ function renderScoreboard(v) {
       h("span", {}, "Projected ", h("b", {}, mu.projected_record)),
       h("span", {}, "Win chance ", h("b", {}, percent(mu.outlook.p_win_matchup))),
       h("span", {}, "Expected ", h("b", {}, `${mu.outlook.expected_wins.toFixed(1)} of ${mu.outlook.categories}`), " cats"),
-      h("span", {}, "Games left ", h("b", {}, `${g.me.usable_remaining} usable`), ` of ${g.me.scheduled_remaining} · opp ${g.opp.usable_remaining} of ${g.opp.scheduled_remaining}`)),
+      h("span", {}, "Games ", h("b", {}, `${num(g.me.expected_total)} vs ${num(g.opp.expected_total)}`), ` expected (${g.me.played} and ${g.opp.played} played)`)),
     h("div", { class: "sb-cats" }, cells),
     h("div", { class: "sb-legend" }, "Each column: you, then the opponent, so far this week. The bar is your chance to win the category by the end of the week.")
   );
@@ -196,6 +196,35 @@ function renderTargets(v) {
     false,
     h("p", { class: "note" }, "How much more you need in each category you're not yet likely to win, over the rest of the week."),
     table(["Cat", "Win %", "Edge", "To draw even", "To 70%", "Per game left"], rows)
+  );
+}
+
+function renderGameCounts(v) {
+  const rows = v.game_counts;
+  if (!rows || !rows.length) return null;
+  const injuries = rows.slice(0, 2).filter((r) => r.injuries.length).map((r) =>
+    h("p", { class: "note" }, h("strong", {}, r.team + ": "),
+      r.injuries.map((i) => `${i.name} ${i.status === "DAY_TO_DAY" ? "DTD" : i.status} (${i.games} g, −${num(i.lost)})`).join(" · ")));
+  return card(
+    "Games this week",
+    true,
+    h("p", { class: "note" }, "Played so far plus the games left that fit a starting slot, each weighted by the chance the player plays: DTD 70% today and tomorrow and 85% after, questionable 50%, doubtful 20%, OUT 0 until his expected return."),
+    table(
+      ["Team", "Opponent", "Played", "Left", "Expected", "Total", "Edge", "Lost to OUT", "Uncertain", "No slot"],
+      rows.map((r, i) => ({
+        cls: r.is_me ? "mine" : i % 2 === 1 ? "pair-end" : null,
+        cells: [
+          { node: r.team, cls: "strong" }, r.opponent || "-", r.played, r.usable_remaining, num(r.expected_remaining),
+          { node: num(r.expected_total), cls: "strong" },
+          { node: signed(r.edge), cls: r.edge >= 1 ? "good" : r.edge <= -1 ? "bad" : "" },
+          { node: r.out_games, cls: r.out_games ? "bad" : "" },
+          { node: r.uncertain_games, cls: r.uncertain_games ? "warn" : "" },
+          r.no_slot_games,
+        ],
+      })),
+      { textCols: [0, 1] }
+    ),
+    injuries
   );
 }
 
@@ -834,7 +863,7 @@ function render(view, demo) {
   // Some panels are absent (no matchup, no season totals yet): skip them.
   const sections = {
     today: [renderScoreboard(view), renderLineup(view), renderChanges(view), renderAlerts(view), renderAcquisitions(view)],
-    matchup: [renderMatchup(view), renderTargets(view), renderStrategy(view), renderAccuracy(view), renderSchedule(view), renderStreamPlan(view), renderSimulator(view), renderNextMatchup(view)],
+    matchup: [renderMatchup(view), renderTargets(view), renderGameCounts(view), renderStrategy(view), renderAccuracy(view), renderSchedule(view), renderStreamPlan(view), renderSimulator(view), renderNextMatchup(view)],
     roster: [renderMyRoster(view), renderAdvanced(view)],
     wire: [renderFreeAgents(view), renderTransactions(view), renderPopular(view)],
     league: [renderStrength(view), renderSeason(view), renderTrade(view), renderTeams(view)],
