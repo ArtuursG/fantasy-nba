@@ -1,4 +1,4 @@
-"""Telegram alerts: a short message when the lineup needs attention."""
+"""Telegram: a short message when the lineup needs attention, and the daily report file."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import httpx
 
 TELEGRAM_API = "https://api.telegram.org"
 MAX_MESSAGE = 4000
+MAX_CAPTION = 1024
 
 
 class NotifyError(Exception):
@@ -30,6 +31,29 @@ def send_telegram(
     if response.status_code != 200:
         detail = response.json().get("description", "") if response.content else ""
         raise NotifyError(f"Telegram refused the message (HTTP {response.status_code}) {detail}")
+
+
+def send_telegram_document(
+    token: str,
+    chat_id: str,
+    filename: str,
+    content: str,
+    caption: str = "",
+    transport: httpx.BaseTransport | None = None,
+) -> None:
+    """Send `content` as a file, so it can be shared on to ChatGPT from the phone."""
+    with httpx.Client(timeout=60, transport=transport) as client:
+        try:
+            response = client.post(
+                f"{TELEGRAM_API}/bot{token}/sendDocument",
+                data={"chat_id": chat_id, "caption": caption[:MAX_CAPTION]},
+                files={"document": (filename, content.encode("utf-8"), "text/markdown")},
+            )
+        except httpx.TransportError as exc:
+            raise NotifyError(f"Could not reach Telegram: {exc}") from exc
+    if response.status_code != 200:
+        detail = response.json().get("description", "") if response.content else ""
+        raise NotifyError(f"Telegram refused the file (HTTP {response.status_code}) {detail}")
 
 
 def alert_text(view: dict, always: bool = False) -> str | None:

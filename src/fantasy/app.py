@@ -25,7 +25,7 @@ from fantasy.demo import MY_TEAM, DemoWorld
 from fantasy.espn.client import EspnClient, fetch_bundle
 from fantasy.espn.parse import parse_bundle
 from fantasy.models import Snapshot
-from fantasy.notify import NotifyError, alert_text, send_telegram
+from fantasy.notify import NotifyError, alert_text, send_telegram, send_telegram_document
 from fantasy.report import render_report
 from fantasy.store import SnapshotStore
 from fantasy.timeutil import local_date
@@ -141,6 +141,19 @@ class FantasyApp:
     def alert(self, always: bool = False) -> str | None:
         view = self.view()
         return alert_text(view, always=always) if view else None
+
+    def send_report_file(self, filename: str, text: str, caption: str) -> None:
+        config = self.config
+        if not (config.telegram_token and config.telegram_chat_id):
+            raise ConfigError(
+                "Telegram is not set up: add TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID."
+            )
+        try:
+            send_telegram_document(
+                config.telegram_token, config.telegram_chat_id, filename, text, caption
+            )
+        except NotifyError as exc:
+            raise ConfigError(str(exc)) from exc
 
     def send_alert(self, text: str) -> None:
         config = self.config

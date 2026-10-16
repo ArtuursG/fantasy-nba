@@ -60,7 +60,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--summary", type=Path, help="Also append today's lineup check to this Markdown file"
     )
     daily.add_argument(
-        "--notify", action="store_true", help="Send the lineup alert to Telegram, if set up"
+        "--notify",
+        action="store_true",
+        help="Send the report file with the lineup check to Telegram, if set up",
     )
     return parser
 
@@ -116,10 +118,9 @@ def main(argv: list[str] | None = None) -> int:
                     summary.write(
                         f"## Fantasy daily, {day}\n\n```text\n{app.alert(always=True) or ''}\n```\n"
                     )
-            alert = app.alert()
-            if args.notify and alert and config.telegram_token and config.telegram_chat_id:
-                app.send_alert(alert)
-                print("Sent to Telegram.")
+            if args.notify and config.telegram_token and config.telegram_chat_id:
+                app.send_report_file(f"fantasy-report-{day}.md", text, app.alert(always=True) or "")
+                print("Report sent to Telegram.")
             return 0
         text = app.report(compact=args.compact)
         if text is None:

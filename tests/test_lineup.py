@@ -7,7 +7,7 @@ from fantasy.analysis.context import Context
 from fantasy.analysis.lineup import lineup_check
 from fantasy.cli import main
 from fantasy.models import Player
-from fantasy.notify import NotifyError, alert_text, send_telegram
+from fantasy.notify import NotifyError, alert_text, send_telegram, send_telegram_document
 from tests.conftest import RIGA
 from tests.helpers import game, snapshot
 
@@ -92,6 +92,27 @@ def test_send_telegram_posts_the_message():
     )
     with pytest.raises(NotifyError, match="Unauthorized"):
         send_telegram("bad", "42", "hello", transport=refused)
+
+
+def test_send_telegram_document_uploads_the_report_file():
+    sent = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append((request.url.path, request.content))
+        return httpx.Response(200, json={"ok": True})
+
+    send_telegram_document(
+        "123:ABC",
+        "42",
+        "report.md",
+        "# Report ā",
+        "x" * 2000,
+        transport=httpx.MockTransport(handler),
+    )
+    path, body = sent[0]
+    assert path == "/bot123:ABC/sendDocument"
+    assert b'filename="report.md"' in body and "# Report ā".encode() in body
+    assert b"x" * 1024 in body and b"x" * 1025 not in body
 
 
 def test_check_command_prints_the_alert_and_needs_telegram_to_notify(tmp_path, monkeypatch, capsys):
