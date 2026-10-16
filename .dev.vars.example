@@ -19,7 +19,7 @@ ESPN_SWID=
 
 # Your team: its name, abbreviation or numeric team id. When empty, the
 # teamId in ESPN_LEAGUE_URL is used.
-FANTASY_TEAM=Rembates Hektors IR
+FANTASY_TEAM=
 
 # Categories you punt, comma-separated (TO, or TO,FT%). Player values and
 # rankings leave them out.

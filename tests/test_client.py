@@ -69,7 +69,7 @@ def test_fetch_bundle_makes_the_expected_requests(raw_today):
     assert len([c for c in calls if "mTransactions2" in c[1]]) == 8
     assert raw["warnings"] == []
 
-    snapshot = parse_bundle(raw, "Rembates Hektors IR")
+    snapshot = parse_bundle(raw, "Home Team")
     assert snapshot.my_team_id == 1
     rostered = {s.player_id for t in snapshot.teams for s in t.roster}
     assert all(snapshot.players[p].games for p in rostered if snapshot.players[p].stats)

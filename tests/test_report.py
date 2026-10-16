@@ -38,7 +38,7 @@ def test_full_report_has_every_section_in_order(view):
     assert text.startswith("# DAILY FANTASY REPORT\n")
     assert "**DEMO DATA" in text
     assert "Date: 2026-10-15" in text
-    assert "My Team: Rembates Hektors IR" in text
+    assert "My Team: Home Team" in text
     assert "Opponent: Sabiles Stealers" in text
     acq = view["acquisitions"]
     assert f"Used this matchup:\n{acq['used']} / 5\nRemaining:\n{acq['remaining']}" in text

@@ -39,7 +39,7 @@ def test_dashboard_refresh_and_report(server):
     refreshed = httpx.post(server + "/api/refresh", timeout=60)
     assert refreshed.status_code == 200
     view = refreshed.json()["view"]
-    assert view["meta"]["my_team"] == "Rembates Hektors IR"
+    assert view["meta"]["my_team"] == "Home Team"
     assert view["changes"]["since"] is not None  # demo writes yesterday's snapshot too
 
     report = httpx.get(server + "/api/report")

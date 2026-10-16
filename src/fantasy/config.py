@@ -15,7 +15,7 @@ from urllib.parse import parse_qs, urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 PROJECT_DIR = Path(__file__).resolve().parents[2]
-DEFAULT_TEAM = "Rembates Hektors IR"
+DEFAULT_TEAM = ""
 DEFAULT_TZ = "Europe/Riga"
 CATEGORY_ALIASES = {
     "FG": "FG%",

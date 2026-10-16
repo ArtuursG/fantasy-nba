@@ -240,16 +240,16 @@ def test_injury_notes_match_by_link_id_then_name():
 
 
 def test_find_team_by_name_id_abbrev_and_unique_part():
-    teams = [Team(id=1, name="Rembates Hektors IR", abbrev="RHIR"), Team(id=2, name="Bullu Kojas")]
-    assert find_team(teams, "rembates  hektors ir") == 1
+    teams = [Team(id=1, name="Home Team", abbrev="HT"), Team(id=2, name="Bullu Kojas")]
+    assert find_team(teams, "home  team") == 1
     assert find_team(teams, "2") == 2
-    assert find_team(teams, "RHIR") == 1
+    assert find_team(teams, "ht") == 1
     assert find_team(teams, "Kojas") == 2
     assert find_team(teams, "Nobody") is None
 
 
 def test_demo_bundle_parses_into_a_full_snapshot(today, world):
-    assert today.league.name.startswith("Wolfy Tribute Federation")
+    assert today.league.name.startswith("Demo League")
     assert today.league.categories == ["FG%", "FT%", "3PM", "REB", "AST", "STL", "BLK", "TO", "PTS"]
     assert today.league.matchup_acquisition_limit == 5
     assert len(today.teams) == 10

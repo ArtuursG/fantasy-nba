@@ -20,7 +20,7 @@ def env(tmp_path, monkeypatch):
 
 def test_demo_refresh_then_report_to_a_file(env, capsys):
     assert main(["refresh", "--demo"]) == 0
-    assert "Saved snapshot of Wolfy Tribute Federation (demo)" in capsys.readouterr().out
+    assert "Saved snapshot of Demo League" in capsys.readouterr().out
     out = env / "report.md"
     assert main(["report", "--demo", "--compact", "--out", str(out)]) == 0
     assert out.read_text(encoding="utf-8").startswith("# DAILY FANTASY REPORT")

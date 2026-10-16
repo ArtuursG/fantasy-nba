@@ -66,7 +66,7 @@ def test_day_to_day_starters_are_flagged_to_check():
 
 def test_alert_text_lists_the_moves_and_stays_quiet_when_all_is_set(view):
     text = alert_text(view)
-    assert text.startswith("Rembates Hektors IR: first lock 02:30")
+    assert text.startswith("Home Team: first lock 02:30")
     assert "Start " in text and "in " in text
     quiet = {"meta": view["meta"], "lineup": None, "changes": {"injuries": []}, "matchup": None}
     assert alert_text(quiet) is None

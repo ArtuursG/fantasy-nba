@@ -28,8 +28,8 @@ from fantasy.espn.constants import PRO_TEAMS
 from fantasy.timeutil import EASTERN
 
 DEMO_LEAGUE_ID = 424242
-LEAGUE_NAME = "Wolfy Tribute Federation (demo)"
-MY_TEAM = "Rembates Hektors IR"
+LEAGUE_NAME = "Demo League"
+MY_TEAM = "Home Team"
 TEAM_NAMES = [
     MY_TEAM,
     "Sabiles Stealers",

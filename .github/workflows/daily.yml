@@ -1,12 +1,5 @@
 name: Daily report
 
-# Reads the league every morning, keeps the snapshot history in the Actions
-# cache (so "since yesterday" and "vs 7 days ago" work) and attaches the
-# report to the run. Needs the ESPN_S2 and ESPN_SWID repository secrets;
-# TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are optional. When the repository is
-# public, the dashboard is also published on GitHub Pages (Settings, Pages,
-# Source: GitHub Actions).
-
 on:
   schedule:
     # 05:52 UTC: 07:52 in Riga in winter, 08:52 in summer, after the last NBA games.
@@ -26,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      ESPN_LEAGUE_URL: https://fantasy.espn.com/basketball/team?leagueId=350604&teamId=2
+      ESPN_LEAGUE_URL: ${{ secrets.ESPN_LEAGUE_URL }}
       ESPN_S2: ${{ secrets.ESPN_S2 }}
       ESPN_SWID: ${{ secrets.ESPN_SWID }}
       FANTASY_PUNT: ${{ vars.FANTASY_PUNT }}
@@ -47,7 +40,7 @@ jobs:
       - run: uv sync --no-dev
       - name: Read the league and write the reports
         run: |
-          uv run fantasy daily --out reports/full.md --summary "$GITHUB_STEP_SUMMARY" --notify
+          uv run fantasy daily --out reports/full.md --notify
           uv run fantasy report --compact --out reports/compact.md
       - name: Save snapshot history
         if: always()
@@ -55,7 +48,9 @@ jobs:
         with:
           path: data
           key: snapshots-${{ github.run_id }}
+      # Run logs and artifacts of a public repository are public too.
       - name: Attach the reports
+        if: ${{ github.event.repository.private }}
         uses: actions/upload-artifact@v4
         with:
           name: fantasy-report
