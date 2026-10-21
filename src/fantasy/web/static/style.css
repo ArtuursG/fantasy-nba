@@ -530,3 +530,6 @@ table.week tfoot td { text-align: center; border-bottom: 1px solid var(--rule); 
 table.week tfoot tr:first-child td { border-top: 2px solid var(--ink); }
 table.week tfoot td.text { text-align: left; font-weight: 600; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); }
 td.wk-open { background: color-mix(in srgb, var(--spot) 22%, transparent); font-weight: 600; }
+
+.pickup-team h3 .chip { margin-left: 8px; vertical-align: 1px; }
+.pickup-team h3 .muted { font-weight: 400; letter-spacing: 0; text-transform: none; }

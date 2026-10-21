@@ -7,6 +7,7 @@ SECTIONS = [
     "TODAY'S LINEUP CHECK",
     "MY ROSTER",
     "INJURY / ROLE CHANGES",
+    "WHAT OTHER TEAMS PICKED UP (LAST 7 DAYS)",
     "CURRENT MATCHUP",
     "GAMES THIS MATCHUP",
     "MY WEEK BY DAY",
@@ -67,3 +68,14 @@ def test_markdown_tables_have_consistent_columns(view):
     for block in re.findall(r"((?:^\|.*\|\n)+)", render_report(view), flags=re.MULTILINE):
         widths = {line.count("|") for line in block.strip().splitlines()}
         assert len(widths) == 1, block[:200]
+
+
+def test_report_lists_what_other_teams_picked_up(view):
+    rows = view["pickups"]
+    assert rows and all(r["team_id"] != view["meta"]["my_team_id"] for r in rows)
+    assert [r["is_opp"] for r in rows] == sorted((r["is_opp"] for r in rows), reverse=True)
+    add = next(a for r in rows for a in r["adds"])
+    assert add["name"] and add["source"] and add["positions"]
+    text = render_report(view)
+    section = text.split("## WHAT OTHER TEAMS PICKED UP")[1].split("\n## ")[0]
+    assert f"- ADD {add['name']} (" in section and "acquisitions this matchup" in section

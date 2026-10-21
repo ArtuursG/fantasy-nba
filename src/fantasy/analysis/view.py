@@ -235,6 +235,89 @@ def _transactions(ctx: Context, prev: Snapshot | None) -> list[dict]:
     return rows
 
 
+def _pickups(ctx: Context, opp_id: int | None, prev: Snapshot | None) -> list[dict]:
+    """What every other team added in the last week, with enough about each
+    player to judge the move. My opponent comes first. Roster changes since
+    the previous snapshot that the transaction log missed are added too."""
+    snap = ctx.snap
+    since = ctx.now - timedelta(days=TRANSACTION_DAYS)
+    by_team: dict[int, dict] = {}
+    for team in snap.teams:
+        if team.id == snap.my_team_id:
+            continue
+        by_team[team.id] = {
+            "team_id": team.id,
+            "team": team.name,
+            "is_opp": team.id == opp_id,
+            "acquisitions": _acquisitions(ctx, team),
+            "adds": [],
+            "drops": [],
+        }
+    for t in snap.transactions:
+        if not t.ts or parse_iso(t.ts) < since:
+            continue
+        if t.type == "WAIVER_ERROR" or t.status.startswith("FAILED"):
+            continue
+        for item in t.items:
+            team_id = item.to_team_id if item.type in ("ADD", "TRADE") else item.from_team_id
+            owner = team_id if team_id is not None else t.team_id
+            entry = by_team.get(owner) if owner is not None else None
+            if entry is None:
+                continue
+            if item.type in ("ADD", "TRADE"):
+                entry["adds"].append(_pickup_row(ctx, item.player_id, t, owner))
+            elif item.type == "DROP":
+                entry["drops"].append(snap.player_name(item.player_id))
+    if prev is not None:
+        for team in snap.teams:
+            entry = by_team.get(team.id)
+            before = prev.team(team.id)
+            if entry is None or before is None:
+                continue
+            had = {s.player_id for s in before.roster}
+            listed = {a["id"] for a in entry["adds"]}
+            for spot in team.roster:
+                if spot.player_id not in had and spot.player_id not in listed:
+                    row = _pickup_row(ctx, spot.player_id, None, team.id)
+                    row["ts"] = spot.acquisition_date
+                    entry["adds"].append(row)
+    for entry in by_team.values():
+        entry["adds"].sort(key=lambda a: a["ts"] or "", reverse=True)
+    rows = [e for e in by_team.values() if e["adds"] or e["drops"]]
+    rows.sort(key=lambda e: (not e["is_opp"], -len(e["adds"]), e["team"]))
+    return rows
+
+
+def _pickup_row(ctx: Context, pid: int, t, team_id: int | None) -> dict:
+    snap = ctx.snap
+    player = snap.players.get(pid)
+    team = snap.team(team_id)
+    kept = bool(team) and any(s.player_id == pid for s in team.roster)  # type: ignore[union-attr]
+    row = {
+        "id": pid,
+        "name": snap.player_name(pid),
+        "ts": t.ts if t else None,
+        "source": SOURCE_LABELS.get(t.type, t.type) if t else "Roster change",
+        "still_rostered": kept,
+        "pro_team": player.pro_team if player else "",
+        "positions": "/".join(positions(player)) if player else "",
+        "health": player.injury_status if player else "",
+        "roster_pct": _round(player.percent_owned) if player else None,
+        "recent": None,
+        "games_left": None,
+        "value": None,
+    }
+    if player is None:
+        return row
+    recent = player.stats.get("last15") or player.stats.get("last7") or player.stats.get("season")
+    row["recent"] = stat_dict(recent)
+    games = ctx.calendar.team_games(player.pro_team_id, ctx.sps) if player.pro_team_id else []
+    row["games_left"] = sum(1 for g in games if not game_started(g, ctx.now))
+    if pid in ctx.lines:
+        row["value"] = round(ctx.valuation.mean(ctx.lines[pid], ctx.punt), 2)
+    return row
+
+
 def _acquisitions(ctx: Context, team: Team) -> dict:
     league = ctx.snap.league
     limit = league.matchup_acquisition_limit or DEFAULT_ACQUISITION_LIMIT
@@ -455,6 +538,7 @@ def build_view(
             for t in sorted(snap.teams, key=lambda t: t.waiver_rank or 99)
         ],
         "transactions": _transactions(ctx, prev),
+        "pickups": _pickups(ctx, opp_id, prev),
         "free_agents": free_agent_rows,
         "popular_free_agents": [
             {

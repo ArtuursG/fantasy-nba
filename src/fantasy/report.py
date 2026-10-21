@@ -211,6 +211,7 @@ class Report:
         self.lineup()
         self.my_roster()
         self.alerts()
+        self.pickups()
         self.matchup()
         self.game_counts()
         self.week_grid()
@@ -723,6 +724,49 @@ class Report:
                 ),
             )
         )
+
+    def pickups(self) -> None:
+        self.section("WHAT OTHER TEAMS PICKED UP (LAST 7 DAYS)")
+        rows = self.view.get("pickups") or []
+        if not rows:
+            self.add("No adds or drops by other teams in the last 7 days.")
+            return
+        self.add(
+            "Every add by another team, my opponent first. Stats are per game over the last "
+            "15 days (season when there is nothing recent).",
+        )
+        for team in rows:
+            acq = team["acquisitions"]
+            label = "OPPONENT " if team["is_opp"] else ""
+            self.add(
+                "",
+                f"{label}{team['team']} | acquisitions this matchup {acq['used']}/{acq['limit']}",
+            )
+            for a in team["adds"]:
+                when = short_time(a["ts"], self.meta["timezone"]) if a["ts"] else "-"
+                bits = [f"{a['positions'] or '?'}, {a['pro_team'] or '?'}", a["source"], when]
+                line = a["recent"]
+                if line:
+                    fg = f"{line['fg_pct']:.3f}" if line["fg_pct"] is not None else "-"
+                    ft = f"{line['ft_pct']:.3f}" if line["ft_pct"] is not None else "-"
+                    bits.append(
+                        f"{line['min']:.1f} MIN, {line['pts']:.1f} PTS, {line['tpm']:.1f} 3PM, "
+                        f"{line['reb']:.1f} REB, {line['ast']:.1f} AST, {line['stl']:.1f} STL, "
+                        f"{line['blk']:.1f} BLK, {line['to']:.1f} TO, FG% {fg}, FT% {ft}"
+                    )
+                if a["value"] is not None:
+                    bits.append(f"value {signed(a['value'], 2)}")
+                if a["roster_pct"] is not None:
+                    bits.append(f"rostered {a['roster_pct']:.0f}%")
+                if a["games_left"] is not None:
+                    bits.append(f"{a['games_left']} games left this matchup")
+                if a["health"] and a["health"] not in ("ACTIVE", "NORMAL"):
+                    bits.append(a["health"])
+                if not a["still_rostered"]:
+                    bits.append("since dropped")
+                self.add(f"- ADD {a['name']} ({' | '.join(bits)})")
+            if team["drops"]:
+                self.add(f"- DROP {', '.join(team['drops'])}")
 
     def transactions(self) -> None:
         self.section("LEAGUE TRANSACTIONS SINCE LAST REPORT")

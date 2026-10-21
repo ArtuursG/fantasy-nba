@@ -713,6 +713,32 @@ function renderPopular(v) {
   );
 }
 
+function renderPickups(v) {
+  const rows = v.pickups;
+  if (!rows) return null;
+  if (!rows.length) return card("Other teams' pickups", false, h("p", { class: "muted" }, "No adds by other teams in the last 7 days."));
+  const health = (x) => (x && x !== "ACTIVE" && x !== "NORMAL" ? (x === "DAY_TO_DAY" ? "DTD" : x) : "");
+  const body = rows.map((team) => h("div", { class: "pickup-team" },
+    h("h3", {}, team.team, team.is_opp ? tag("Opponent", "solid") : null, h("span", { class: "muted" }, ` · ${team.acquisitions.used}/${team.acquisitions.limit} acquisitions`)),
+    team.adds.length ? table(
+      ["Added", "Pos", "Team", "MIN", "PTS", "3PM", "REB", "AST", "STL", "BLK", "Value", "Games left", "How"],
+      team.adds.map((a) => {
+        const l = a.recent || {};
+        return {
+          cells: [
+            { node: [a.name, health(a.health) ? " " : null, health(a.health) ? tag(health(a.health), "warn") : null, a.still_rostered ? null : h("small", { class: "muted" }, " dropped since")], cls: "strong" },
+            a.positions || "-", a.pro_team || "-", num(l.min), num(l.pts), num(l.tpm), num(l.reb), num(l.ast), num(l.stl), num(l.blk),
+            valueCell(a.value), a.games_left ?? "-", a.source,
+          ],
+        };
+      }),
+      { textCols: [0, 1, 2, 12] }
+    ) : null,
+    team.drops.length ? h("p", { class: "note" }, "Dropped: " + team.drops.join(", ")) : null
+  ));
+  return card("Other teams' pickups", true, h("p", { class: "note" }, "Last 7 days, your opponent first. Stats per game over the last 15 days."), body);
+}
+
 function renderTransactions(v) {
   const rows = v.transactions;
   if (!rows.length) return card("Transactions, 7 days", false, h("p", { class: "muted" }, "None."));
@@ -995,10 +1021,10 @@ function render(view, demo) {
   const fixes = c ? c.swaps.length + c.bench.length + c.ir.length : 0;
   // Some panels are absent (no matchup, no season totals yet): skip them.
   const sections = {
-    today: [renderScoreboard(view), renderLineup(view), renderChanges(view), renderAlerts(view), renderAcquisitions(view)],
+    today: [renderScoreboard(view), renderLineup(view), renderChanges(view), renderAlerts(view), renderAcquisitions(view), renderPickups(view)],
     matchup: [renderMatchup(view), renderTargets(view), renderWhatIf(view), renderGameCounts(view), renderWeekGrid(view), renderStrategy(view), renderAccuracy(view), renderSchedule(view), renderStreamPlan(view), renderSimulator(view), renderNextMatchup(view)],
     roster: [renderMyRoster(view), renderAdvanced(view)],
-    wire: [renderFreeAgents(view), renderTransactions(view), renderPopular(view)],
+    wire: [renderPickups(view), renderFreeAgents(view), renderTransactions(view), renderPopular(view)],
     league: [renderStrength(view), renderSeason(view), renderTrade(view), renderTeams(view)],
     rankings: [renderRankings(view)],
     report: [renderReport()],
