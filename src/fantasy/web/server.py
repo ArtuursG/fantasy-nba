@@ -27,6 +27,8 @@ STATIC_FILES = {
     "style.css": "text/css; charset=utf-8",
     # Fonts ship with the app so the dashboard makes no outside requests.
     **{f"fonts/{p.name}": "font/woff2" for p in (STATIC / "fonts").glob("*.woff2")},
+    **{f"icons/{p.name}": "image/png" for p in (STATIC / "icons").glob("*.png")},
+    "manifest.webmanifest": "application/manifest+json",
 }
 
 

@@ -44,7 +44,9 @@ def export_site(app: FantasyApp, out: Path) -> Path:
     }
     if out.exists():
         shutil.rmtree(out)
-    shutil.copytree(STATIC, out / "static", ignore=shutil.ignore_patterns("index.html"))
+    shutil.copytree(STATIC, out / "static", ignore=shutil.ignore_patterns("index.html", "sw.js"))
+    # The service worker sits at the root so it covers the whole page.
+    shutil.copy(STATIC / "sw.js", out / "sw.js")
     payload = json.dumps(data, allow_nan=False, ensure_ascii=False)
     (out / "static" / "data.js").write_text(
         f"window.FANTASY_STATIC = {payload};\n", encoding="utf-8"

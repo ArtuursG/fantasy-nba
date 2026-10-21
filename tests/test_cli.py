@@ -136,3 +136,8 @@ def test_export_writes_a_static_dashboard(env):
     assert payload["view"]["meta"]["my_team"]
     assert (out / "static" / "fonts" / "big-shoulders-latin.woff2").exists()
     assert not (out / "static" / "index.html").exists()
+    assert (out / "sw.js").exists() and (out / "static" / "manifest.webmanifest").exists()
+    assert (
+        '"static/manifest.webmanifest"' in page
+        and (out / "static" / "icons" / "icon-192.png").exists()
+    )

@@ -1604,6 +1604,10 @@ async function checkForNewData() {
     }
   } catch { /* offline: try again later */ }
 }
+if (STATIC && "serviceWorker" in navigator) {
+  // Installable and readable offline (the hosted page only).
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+}
 if (STATIC) {
   setInterval(checkForNewData, 5 * 60 * 1000);
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") checkForNewData(); });
