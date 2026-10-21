@@ -519,6 +519,7 @@ table.week th.wk-day { text-align: center; line-height: 1.1; }
 table.week th.wk-day.past { color: var(--muted); }
 .wk-start { background: color-mix(in srgb, var(--win) 22%, transparent); }
 .wk-doubt { background: color-mix(in srgb, var(--warn) 26%, transparent); }
+.wk-rest { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--win) 22%, transparent) 0 6px, color-mix(in srgb, var(--warn) 22%, transparent) 6px 12px); }
 .wk-bench { color: var(--muted); text-decoration: line-through; }
 .wk-out { background: color-mix(in srgb, var(--loss) 20%, transparent); color: var(--loss); }
 .wk-played { background: color-mix(in srgb, var(--ink) 10%, transparent); }

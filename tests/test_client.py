@@ -187,3 +187,5 @@ def test_lineup_totals_add_up_starters_box_scores_and_rescore_the_matchup(raw_to
     assert m.home.stats["FG%"] == 0.5 and m.away.stats["FG%"] == 0.2
     assert m.home.results["PTS"] == "WIN" and m.away.results["PTS"] == "LOSS"
     assert m.home.wins >= 2 and m.home.wins + m.home.losses + m.home.ties == 9
+    assert snap.daily_totals[sp][home]["GP"] == 1 and snap.daily_totals[sp][away]["PTS"] == 20
+    assert period in snap.pairings and [home, away] in snap.pairings[period]

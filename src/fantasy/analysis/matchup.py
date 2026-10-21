@@ -94,9 +94,12 @@ def project_side(
 
 
 def played_games(ctx: Context, side: SideProjection) -> int:
-    """Games so far this matchup, estimated: players on the roster as it
-    stands now (IR aside) with a box score that day, at most one per starting
-    slot. ESPN's matchup data has no games-played count."""
+    """Games so far this matchup: counted from each day's lineup when it was
+    read, else estimated from the roster as it stands now (IR aside) and the
+    box scores, at most one per starting slot."""
+    days = [ctx.snap.daily_totals.get(sp, {}).get(side.team.id) for sp in ctx.sps]
+    if any(days):
+        return int(sum(d["GP"] for d in days if d))
     slots = len(starting_slots(ctx.snap.league.lineup_slots))
     roster = [
         ctx.snap.players[s.player_id]
@@ -117,12 +120,15 @@ def game_count(ctx: Context, side: SideProjection) -> dict:
     expected = side.expected_remaining
     out_games: dict[int, int] = {}
     doubtful: dict[int, list[float]] = {}
+    resting: set[int] = set()
     for plan in side.remaining_plans:
         for pid in plan.unavailable:
             out_games[pid] = out_games.get(pid, 0) + 1
         for pid in plan.started:
             if plan.chance.get(pid, 1.0) < 1.0:
                 doubtful.setdefault(pid, []).append(plan.chance[pid])
+                if pid in plan.rest:
+                    resting.add(pid)
     notes = []
     for pid, games in sorted(out_games.items(), key=lambda kv: -kv[1]):
         player = ctx.snap.players[pid]
@@ -131,10 +137,11 @@ def game_count(ctx: Context, side: SideProjection) -> dict:
         )
     for pid, chances in sorted(doubtful.items(), key=lambda kv: -len(kv[1])):
         player = ctx.snap.players[pid]
+        healthy = player.injury_status in ("ACTIVE", "NORMAL")
         notes.append(
             {
                 "name": player.name,
-                "status": player.injury_status,
+                "status": "B2B rest" if pid in resting and healthy else player.injury_status,
                 "games": len(chances),
                 "lost": round(len(chances) - sum(chances), 1),
             }
@@ -394,9 +401,44 @@ def analyze_matchup(ctx: Context, mine: SideProjection, theirs: SideProjection) 
         "projected_record": _record(projected),
         "games": {"me": game_count(ctx, mine), "opp": game_count(ctx, theirs)},
         "attempts_estimated": estimated_attempts,
+        "by_day": day_breakdown(ctx, me.id, opp.id),
         "outlook": matchup_outlook(projected),
         "targets": targets(projected, mine),
     }
+
+
+def day_breakdown(ctx: Context, me: int, opp: int) -> list[dict]:
+    """Each played day of the matchup: both lineups' totals per category and
+    who won the day in it, from the lineups ESPN had that day."""
+    rows = []
+    for sp in ctx.sps:
+        day = ctx.snap.daily_totals.get(sp, {})
+        mine, theirs = day.get(me), day.get(opp)
+        if not mine or not theirs or not (mine["GP"] or theirs["GP"]):
+            continue
+        cats = {}
+        for cat in ctx.snap.league.categories:
+            a, b = _day_value(mine, cat), _day_value(theirs, cat)
+            cats[cat] = {"me": a, "opp": b, "leader": _leader(cat, a, b)}
+        date = ctx.calendar.date_of(sp)
+        rows.append(
+            {
+                "sp": sp,
+                "label": day_label(date) if date else str(sp),
+                "games": {"me": int(mine["GP"]), "opp": int(theirs["GP"])},
+                "cats": cats,
+                "won": sum(1 for c in cats.values() if c["leader"] == "me"),
+                "lost": sum(1 for c in cats.values() if c["leader"] == "opp"),
+            }
+        )
+    return rows
+
+
+def _day_value(totals: dict[str, float], cat: str) -> float | None:
+    if cat in PCT_PARTS:
+        made, attempted = PCT_PARTS[cat]
+        return totals[made] / totals[attempted] if totals.get(attempted) else None
+    return totals.get(cat)
 
 
 def _record(projected: list[dict]) -> str:

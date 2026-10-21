@@ -197,6 +197,10 @@ class League:
     waiver_hours: int | None = None
     c_limit: int = 4
     scoring_type: str | None = None
+    # Regular-season matchups (later ones are the playoffs) and how many
+    # teams make the playoffs, when ESPN says.
+    regular_periods: int | None = None
+    playoff_team_count: int | None = None
 
 
 @dataclass
@@ -215,6 +219,11 @@ class Snapshot:
     # Lineup slots as ESPN has them set for each scoring period fetched:
     # scoring period -> team id -> player id -> slot id.
     lineups: dict[int, dict[int, dict[int, int]]] = field(default_factory=dict)
+    # Each team's actual totals per day of the current matchup, from its
+    # lineup that day: scoring period -> team id -> stat -> total (GP too).
+    daily_totals: dict[int, dict[int, dict[str, float]]] = field(default_factory=dict)
+    # The season's schedule: matchup period -> [[home id, away id], ...].
+    pairings: dict[int, list[list[int]]] = field(default_factory=dict)
     demo: bool = False
     schema: int = SCHEMA_VERSION
 

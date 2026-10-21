@@ -104,7 +104,11 @@ def _kind(
     plan = ahead.get(sp)
     if plan is not None:
         if pid in plan.started:
-            return "doubt" if plan.chance.get(pid, 1.0) < 1.0 else "start"
+            chance = plan.chance.get(pid, 1.0)
+            if chance >= 1.0:
+                return "start"
+            healthy = ctx.snap.players[pid].injury_status in ("ACTIVE", "NORMAL")
+            return "rest" if pid in plan.rest and healthy else "doubt"
         if pid in plan.benched:
             return "bench"
         if pid in plan.unavailable or slot_id == IR_SLOT:

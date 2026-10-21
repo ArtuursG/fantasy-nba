@@ -303,11 +303,20 @@ class Report:
         grid = self.view.get("week_grid")
         if not grid or not grid["days"]:
             return
-        code = {"start": "S", "doubt": "S?", "bench": "B", "out": "O", "played": "P", "missed": "x"}
+        code = {
+            "start": "S",
+            "doubt": "S?",
+            "rest": "S~",
+            "bench": "B",
+            "out": "O",
+            "played": "P",
+            "missed": "x",
+        }
         self.section("MY WEEK BY DAY")
         self.add(
-            "Each game as opponent + code: S starts, S? starts but doubtful, B no free slot, "
-            "O out, P played, x did not play. @ = away.",
+            "Each game as opponent + code: S starts, S? starts but doubtful, S~ a star on the "
+            "second night of a back-to-back (may rest), B no free slot, O out, P played, x did "
+            "not play. @ = away.",
             "",
         )
         days = grid["days"]

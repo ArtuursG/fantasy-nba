@@ -137,6 +137,13 @@ def parse_bundle(raw: dict[str, Any], team_hint: str | None, demo: bool = False)
         pro_teams=pro_teams,
         warnings=warnings,
         lineups=parse_lineups(raw.get("daily_rosters") or {}),
+        daily_totals=daily_lineup_totals(
+            raw.get("daily_rosters") or {},
+            players,
+            season,
+            league.matchup_periods.get(league.matchup_period) or [],
+        ),
+        pairings=parse_pairings(league_raw),
         demo=demo,
     )
 
@@ -345,7 +352,28 @@ def parse_league(raw: dict[str, Any], meta: dict[str, Any]) -> League:
         matchup_acquisition_limit=int(limit) if limit and _num(limit) > 0 else None,
         waiver_hours=int(acquisitions["waiverHours"]) if acquisitions.get("waiverHours") else None,
         scoring_type=scoring.get("scoringType"),
+        regular_periods=_int_or_none(schedule.get("matchupPeriodCount")),
+        playoff_team_count=_int_or_none(schedule.get("playoffTeamCount")),
     )
+
+
+def _int_or_none(value: Any) -> int | None:
+    try:
+        return int(value) if value else None
+    except (TypeError, ValueError):
+        return None
+
+
+def parse_pairings(raw: dict[str, Any]) -> dict[int, list[list[int]]]:
+    """Every matchup of the season, by period: [[home id, away id], ...]."""
+    pairings: dict[int, list[list[int]]] = {}
+    for item in raw.get("schedule") or []:
+        home = (item.get("home") or {}).get("teamId")
+        away = (item.get("away") or {}).get("teamId")
+        period = int(item.get("matchupPeriodId") or 0)
+        if period and home and away:
+            pairings.setdefault(period, []).append([int(home), int(away)])
+    return pairings
 
 
 def parse_pro_schedule(raw: Any) -> tuple[dict[int, str], list[ProGame]]:
@@ -524,6 +552,19 @@ def lineup_totals(
     """Each team's category totals so far this matchup, from the lineup it
     had each day (players in starting slots) and their box scores."""
     totals: dict[int, dict[str, float]] = {}
+    for by_team in daily_lineup_totals(daily, players, season, sps).values():
+        for team_id, day in by_team.items():
+            sums = totals.setdefault(team_id, dict.fromkeys(day, 0.0))
+            for name, value in day.items():
+                sums[name] += value
+    return totals
+
+
+def daily_lineup_totals(
+    daily: dict[str, Any], players: dict[int, Player], season: int, sps: list[int]
+) -> dict[int, dict[int, dict[str, float]]]:
+    """Scoring period -> team id -> that day's totals of its starters (GP too)."""
+    out: dict[int, dict[int, dict[str, float]]] = {}
     wanted = set(sps)
     for key, response in daily.items():
         sp = int(key)
@@ -531,7 +572,8 @@ def lineup_totals(
             continue
         for team in (response or {}).get("teams") or []:
             team_id = int(team.get("id") or 0)
-            sums = totals.setdefault(team_id, dict.fromkeys(TOTAL_FIELDS, 0.0) | {"GP": 0.0})
+            day = out.setdefault(sp, {})
+            sums = day.setdefault(team_id, dict.fromkeys(TOTAL_FIELDS, 0.0) | {"GP": 0.0})
             for entry in (team.get("roster") or {}).get("entries") or []:
                 if int(entry.get("lineupSlotId", BENCH_SLOT)) in NON_STARTING_SLOTS:
                     continue
@@ -541,7 +583,7 @@ def lineup_totals(
                 sums["GP"] += 1
                 for name, attr in TOTAL_FIELDS.items():
                     sums[name] += getattr(game.line, attr)
-    return totals
+    return out
 
 
 def _game_on(

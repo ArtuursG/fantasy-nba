@@ -295,3 +295,57 @@ def test_player_cards_cover_rosters_and_free_agents(view, today):
     assert card["values"]
     fa = cards[str(view["free_agents"][0]["id"])]
     assert fa["owner"] in ("FA", "WA")
+
+
+def test_day_breakdown_and_exact_games_from_daily_lineups(snapshots):
+    import copy
+
+    from fantasy.analysis.matchup import day_breakdown, played_games, project_side, sides_for
+
+    snap = copy.deepcopy(snapshots[2])
+    ctx = Context.build(snap)
+    me = snap.my_team_id
+    opp = ctx.opponent_id(me)
+    first = ctx.sps[0]
+    base = {k: 0.0 for k in ("PTS", "REB", "AST", "STL", "BLK", "TO", "3PM", "FTM", "FTA")}
+    snap.daily_totals = {
+        first: {
+            me: base | {"GP": 6, "PTS": 120, "TO": 10, "FGM": 40, "FGA": 80},
+            opp: base | {"GP": 4, "PTS": 90, "TO": 12, "FGM": 30, "FGA": 70},
+        }
+    }
+    ctx = Context.build(snap)
+    (row,) = day_breakdown(ctx, me, opp)
+    assert row["games"] == {"me": 6, "opp": 4}
+    assert row["cats"]["PTS"]["leader"] == "me" and row["cats"]["TO"]["leader"] == "me"
+    assert row["cats"]["FG%"]["me"] == 0.5
+    my_side, _ = sides_for(ctx, me)
+    assert played_games(ctx, project_side(ctx, snap.team(me), my_side)) == 6
+
+
+def test_stars_may_rest_on_the_second_night_of_a_back_to_back():
+    from datetime import date
+
+    from fantasy.analysis.schedule import REST_CHANCE, play_chance
+
+    today = date(2026, 10, 15)
+    star = Player(id=1, name="Star")
+    assert play_chance(star, today, today, rest=True) == pytest.approx(REST_CHANCE)
+    dtd = Player(id=2, name="DTD star", injury_status="DAY_TO_DAY")
+    assert play_chance(dtd, today, today, rest=True) == pytest.approx(0.7 * REST_CHANCE)
+
+
+def test_back_to_back_rest_marks_only_top_players(today):
+    import copy
+
+    from fantasy.analysis.schedule import plan_days, star_cutoff
+
+    snap = copy.deepcopy(today)
+    ctx = Context.build(snap)
+    cutoff = star_cutoff(ctx.values)
+    team = snap.team(snap.my_team_id)
+    for plan in plan_days(ctx.calendar, snap, team, ctx.values, ctx.sps, ctx.now):
+        for pid in plan.rest:
+            assert ctx.values[pid] >= cutoff
+            assert ctx.calendar.back_to_back(snap.players[pid].pro_team_id, plan.date)
+            assert plan.chance[pid] < 1.0

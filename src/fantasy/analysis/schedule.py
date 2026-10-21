@@ -41,6 +41,7 @@ class Calendar:
     sp_dates: dict[int, date]
     by_sp: dict[int, list[ProGame]] = field(default_factory=dict)
     by_team: dict[int, list[ProGame]] = field(default_factory=dict)
+    team_days: set[tuple[int, str]] = field(default_factory=set)
 
     @classmethod
     def build(cls, snapshot: Snapshot) -> Calendar:
@@ -52,7 +53,13 @@ class Calendar:
             calendar.by_sp.setdefault(game.sp, []).append(game)
             calendar.by_team.setdefault(game.home_id, []).append(game)
             calendar.by_team.setdefault(game.away_id, []).append(game)
+            calendar.team_days.add((game.home_id, game.date))
+            calendar.team_days.add((game.away_id, game.date))
         return calendar
+
+    def back_to_back(self, team_id: int, day: date) -> bool:
+        """The team played the day before: `day` is the second night."""
+        return (team_id, (day - timedelta(days=1)).isoformat()) in self.team_days
 
     def date_of(self, sp: int) -> date | None:
         return date_for_sp(self.sp_dates, sp)
@@ -83,15 +90,32 @@ def is_available(player: Player, day: date) -> bool:
 PLAY_CHANCE = {"PROBABLE": 0.9, "DAY_TO_DAY": 0.7, "QUESTIONABLE": 0.5, "DOUBTFUL": 0.2}
 RETURN_CHANCE = 0.7
 NEAR_DAYS = 2
+# Stars (the top STAR_COUNT by value, about three rounds) often sit the
+# second night of a back-to-back.
+STAR_COUNT = 30
+REST_CHANCE = 0.85
+_cutoffs: dict[tuple[int, int], float] = {}
 
 
-def play_chance(player: Player, day: date, today: date) -> float:
+def star_cutoff(values: dict[int, float]) -> float:
+    """The value a player needs to count as a star (cached per values dict)."""
+    key = (id(values), len(values))
+    if key not in _cutoffs:
+        top = sorted(values.values(), reverse=True)
+        _cutoffs.clear()
+        _cutoffs[key] = top[STAR_COUNT - 1] if len(top) >= STAR_COUNT else float("inf")
+    return _cutoffs[key]
+
+
+def play_chance(player: Player, day: date, today: date, rest: bool = False) -> float:
+    """`rest`: a star on the second night of a back-to-back."""
     if player.injury_status in UNAVAILABLE_STATUSES:
-        return RETURN_CHANCE if is_available(player, day) else 0.0
-    chance = PLAY_CHANCE.get(player.injury_status, 1.0)
-    if (day - today).days >= NEAR_DAYS:
-        chance = 1 - (1 - chance) / 2
-    return chance
+        chance = RETURN_CHANCE if is_available(player, day) else 0.0
+    else:
+        chance = PLAY_CHANCE.get(player.injury_status, 1.0)
+        if (day - today).days >= NEAR_DAYS:
+            chance = 1 - (1 - chance) / 2
+    return chance * REST_CHANCE if rest else chance
 
 
 def starting_slots(lineup_slots: dict[int, int]) -> list[int]:
@@ -176,6 +200,8 @@ class DayPlan:
     lineup: Lineup
     # Chance each available player plays (1.0 when healthy).
     chance: dict[int, float] = field(default_factory=dict)
+    # Stars whose chance is lowered for the second night of a back-to-back.
+    rest: set[int] = field(default_factory=set)
 
     @property
     def volume(self) -> str:
@@ -225,6 +251,12 @@ def plan_days(
             p for p in roster if p.pro_team_id in teams_playing and _in_window(windows, p.id, day)
         ]
         available = [p for p in playing if is_available(p, day)]
+        cutoff = star_cutoff(values)
+        rest = {
+            p.id
+            for p in available
+            if values.get(p.id, 0.0) >= cutoff and calendar.back_to_back(p.pro_team_id, day)
+        }
         lineup = Lineup(slots)
         started, benched = [], []
         for player in sorted(available, key=lambda p: values.get(p.id, 0.0), reverse=True):
@@ -243,7 +275,8 @@ def plan_days(
                 unavailable=[p.id for p in playing if p not in available],
                 open_slots=lineup.open_slots,
                 lineup=lineup,
-                chance={p.id: play_chance(p, day, today) for p in available},
+                chance={p.id: play_chance(p, day, today, p.id in rest) for p in available},
+                rest=rest,
             )
         )
     return plans

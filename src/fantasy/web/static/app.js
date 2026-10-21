@@ -458,6 +458,7 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") closePlaye
 const WEEK_KINDS = {
   start: "Starts",
   doubt: "Starts, doubtful",
+  rest: "Starts, may rest (B2B)",
   bench: "No free slot",
   out: "Out",
   played: "Played",
@@ -505,7 +506,7 @@ function renderGameCounts(v) {
   return card(
     "Games this week",
     true,
-    h("p", { class: "note" }, "Played so far plus the games left that fit a starting slot, each weighted by the chance the player plays: DTD 70% today and tomorrow and 85% after, questionable 50%, doubtful 20%, OUT 0 until his expected return. Streams: games other teams are expected to add with pickups, from their acquisitions left and how many they usually use (you: none, that's your call)."),
+    h("p", { class: "note" }, "Played so far plus the games left that fit a starting slot, each weighted by the chance the player plays: DTD 70% today and tomorrow and 85% after, questionable 50%, doubtful 20%, OUT 0 until his expected return, and 85% for a top-30 player on the second night of a back-to-back. Streams: games other teams are expected to add with pickups, from their acquisitions left and how many they usually use (you: none, that's your call)."),
     table(
       ["Team", "Opponent", "Played", "Left", "Expected", "Streams", "Total", "Edge", "Lost to OUT", "Uncertain", "No slot"],
       rows.map((r, i) => ({

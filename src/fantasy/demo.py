@@ -819,6 +819,15 @@ class DemoWorld:
                     )
                 )
 
+        # The rest of the regular season, as ESPN lists it: pairings only.
+        for item_period in range(period + 2, 19):
+            for home, away in _round_robin(item_period):
+                schedule.append(
+                    self._schedule_item(
+                        len(schedule) + 1, item_period, period, home, away, rosters, as_of
+                    )
+                )
+
         league = {
             "id": DEMO_LEAGUE_ID,
             "seasonId": self.season,
@@ -858,7 +867,9 @@ class DemoWorld:
                 },
                 "acquisitionSettings": {"matchupAcquisitionLimit": 5, "waiverHours": 24},
                 "scheduleSettings": {
-                    "matchupPeriodCount": 20,
+                    # 18 regular-season weeks, then two playoff weeks.
+                    "matchupPeriodCount": 18,
+                    "playoffTeamCount": 4,
                     # As ESPN sends it: the weeks each matchup covers.
                     "matchupPeriods": {str(k): [k] for k in range(1, 21)},
                 },
@@ -1013,3 +1024,11 @@ class DemoWorld:
                 {"displayName": PRO_TEAMS[team], "injuries": rows} for team, rows in by_team.items()
             ]
         }
+
+
+def _round_robin(period: int, teams: int = 10) -> list[tuple[int, int]]:
+    """A week of the circle method: team 1 stays put, the others rotate."""
+    others = list(range(2, teams + 1))
+    shift = period % len(others)
+    ring = [1] + others[shift:] + others[:shift]
+    return [(ring[i], ring[-1 - i]) for i in range(teams // 2)]
