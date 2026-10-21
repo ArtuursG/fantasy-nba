@@ -613,6 +613,20 @@ class Report:
             f"{games['opp']['scheduled_remaining']} / {games['opp']['usable_remaining']} / "
             f"{games['opp']['expected_remaining']:.1f}",
         )
+        if mu.get("by_day"):
+            self.add("", "Day by day so far (my lineup's total - opponent's, W = I won the day):")
+            for d in mu["by_day"]:
+                parts = []
+                for cat, c in d["cats"].items():
+                    fmt = (lambda v: f"{v:.3f}") if cat.endswith("%") else (lambda v: f"{v:.0f}")
+                    mark = {"me": "W", "opp": "L", "tie": "T"}.get(c["leader"], "-")
+                    me = fmt(c["me"]) if c["me"] is not None else "-"
+                    opp = fmt(c["opp"]) if c["opp"] is not None else "-"
+                    parts.append(f"{cat} {me}-{opp} {mark}")
+                self.add(
+                    f"- {d['label']} (games {d['games']['me']}-{d['games']['opp']}, day "
+                    f"{d['won']}-{d['lost']}): " + ", ".join(parts)
+                )
         trend = self.view.get("trend")
         if trend and len(trend["points"]) > 1:
             shown = trend["points"][-8:]

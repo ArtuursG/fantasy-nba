@@ -11,7 +11,7 @@
 </head>
 <body>
   <header class="masthead">
-    <div class="dateline"><span class="brand">Fantasy Daily</span><span id="dateline"></span></div>
+    <div class="dateline"><span class="brand">Fantasy Daily</span><span><span id="dateline"></span> <span id="freshness" class="freshness"></span></span></div>
     <h1 id="league-name">Fantasy Daily</h1>
     <p id="subtitle" class="subline">No snapshot yet</p>
   </header>
@@ -20,6 +20,10 @@
     <div class="bar-inner">
       <nav id="tabs" class="tabs" role="tablist" aria-label="Sections"></nav>
       <div class="actions">
+        <div class="finder">
+          <input id="player-search" type="search" placeholder="Find a player" autocomplete="off" aria-label="Find a player" aria-controls="player-results">
+          <ul id="player-results" class="finder-results" role="listbox" hidden></ul>
+        </div>
         <button id="refresh" type="button">Refresh</button>
         <button id="copy" type="button" class="primary" disabled>COPY DAILY FANTASY REPORT</button>
         <button id="download" type="button" disabled title="Save the report as a file to attach in ChatGPT">Download .md</button>

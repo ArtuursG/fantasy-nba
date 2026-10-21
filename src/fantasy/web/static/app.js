@@ -217,6 +217,25 @@ function renderMatchup(v) {
   );
 }
 
+function renderByDay(v) {
+  const mu = v.matchup;
+  if (!mu || !mu.by_day || !mu.by_day.length) return null;
+  const days = mu.by_day;
+  const fmt = (cat, x) => (x === null || x === undefined ? "-" : cat.endsWith("%") ? pct(x) : num(x, 0));
+  const cell = (c, cat) => ({ node: `${fmt(cat, c.me)}–${fmt(cat, c.opp)}`, cls: c.leader === "me" ? "day-win" : c.leader === "opp" ? "day-loss" : "" });
+  const rows = [
+    { cls: "day-games", cells: ["Games", ...days.map((d) => `${d.games.me}–${d.games.opp}`)] },
+    ...v.meta.categories.map((cat) => ({ cells: [{ node: cat, cls: "strong" }, ...days.map((d) => (d.cats[cat] ? cell(d.cats[cat], cat) : "-"))] })),
+    { cls: "day-score", cells: ["Day won", ...days.map((d) => ({ node: `${d.won}–${d.lost}`, cls: d.won > d.lost ? "good" : d.won < d.lost ? "bad" : "" }))] },
+  ];
+  return card(
+    "Day by day",
+    false,
+    h("p", { class: "note" }, "Each played day: your lineup's total, then the opponent's (from the lineups ESPN had that day). Green: you won the day in that category."),
+    table(["", ...days.map((d) => d.label)], rows, { textCols: [0] })
+  );
+}
+
 function renderSeasonOutlook(v) {
   const so = v.season_outlook;
   if (!so) return null;
@@ -510,7 +529,8 @@ function openPlayer(pid) {
       season ? stat("Value, season", signed(season.value, 2)) : null,
       recent ? stat("Last 15 days", signed(recent.value, 2)) : null,
       season ? stat("Rank", "#" + season.rank) : null,
-      c.roster_pct !== null ? stat("Rostered", Math.round(c.roster_pct) + "%") : null
+      c.roster_pct !== null ? stat("Rostered", Math.round(c.roster_pct) + "%") : null,
+      c.playoff_games !== null && c.playoff_games !== undefined ? stat("Playoff-week games", String(c.playoff_games)) : null
     ),
     c.games.length ? [h("h3", {}, "Minutes, last " + c.games.length + " games"), sparkline(c.games.map((g) => g.min).reverse())] : null,
     h("h3", {}, "This week"),
@@ -1215,14 +1235,27 @@ const TABS = [
 ];
 if (STATIC) TABS.splice(TABS.findIndex(([key]) => key === "setup"), 1);
 
+// Small per-browser memory (last tab, Compact); the page works without it.
+function remember(key, value) {
+  try { localStorage.setItem("fantasy-daily:" + key, value); } catch { /* private mode */ }
+}
+
+function recall(key) {
+  try { return localStorage.getItem("fantasy-daily:" + key); } catch { return null; }
+}
+
 function currentTab() {
+  const valid = (k) => TABS.some(([t]) => t === k);
   const key = location.hash.slice(1);
-  return TABS.some(([k]) => k === key) ? key : "today";
+  if (valid(key)) return key;
+  const last = recall("tab");
+  return valid(last) ? last : "today";
 }
 
 function showTab(key) {
   document.querySelectorAll(".section").forEach((el) => { el.hidden = el.dataset.tab !== key; });
   document.querySelectorAll(".tab").forEach((el) => el.setAttribute("aria-selected", String(el.dataset.tab === key)));
+  remember("tab", key);
 }
 
 function renderTabs(counts) {
@@ -1266,12 +1299,13 @@ function render(view, demo) {
   }
   currentView = view;
   renderMasthead(view);
+  updateFreshness();
   const c = view.lineup;
   const fixes = view.actions ? view.actions.todo_count : c ? c.swaps.length + c.bench.length + c.ir.length : 0;
   // Some panels are absent (no matchup, no season totals yet): skip them.
   const sections = {
     today: [renderActions(view), renderScoreboard(view), renderLineup(view), renderChanges(view), renderAlerts(view), renderAcquisitions(view), renderPickups(view)],
-    matchup: [renderMatchup(view), renderTrend(view), renderTargets(view), renderWhatIf(view), renderGameCounts(view), renderWeekGrid(view), renderStrategy(view), renderAccuracy(view), renderSchedule(view), renderStreamPlan(view), renderSimulator(view), renderNextMatchup(view)],
+    matchup: [renderMatchup(view), renderTrend(view), renderByDay(view), renderTargets(view), renderWhatIf(view), renderGameCounts(view), renderWeekGrid(view), renderStrategy(view), renderAccuracy(view), renderSchedule(view), renderStreamPlan(view), renderSimulator(view), renderNextMatchup(view)],
     roster: [renderMyRoster(view), renderAdvanced(view)],
     wire: [renderPickups(view), renderFreeAgents(view), renderTransactions(view), renderPopular(view)],
     league: [renderSeasonOutlook(view), renderStrength(view), renderSeason(view), renderTrade(view), renderTeams(view)],
@@ -1362,5 +1396,64 @@ $("download").addEventListener("click", () => {
   link.click();
   link.remove();
 });
-$("compact").addEventListener("change", loadReport);
+$("compact").addEventListener("change", () => { remember("compact", $("compact").checked ? "1" : "0"); loadReport(); });
+$("compact").checked = recall("compact") === "1";
+
+// How old the data is, and on the hosted page a reload when a newer export is up.
+function updateFreshness() {
+  const el = $("freshness");
+  const at = currentView && currentView.meta.fetched_at_iso;
+  if (!el || !at) return;
+  const minutes = Math.max(0, Math.round((Date.now() - Date.parse(at)) / 60000));
+  el.textContent = "· updated " + (minutes < 1 ? "just now" : minutes < 60 ? `${minutes} min ago` : minutes < 48 * 60 ? `${Math.floor(minutes / 60)} h ${minutes % 60} min ago` : `${Math.floor(minutes / 1440)} days ago`);
+  el.classList.toggle("stale", minutes > 180);
+}
+setInterval(updateFreshness, 60 * 1000);
+
+async function checkForNewData() {
+  if (!STATIC) return;
+  try {
+    const res = await fetch("static/version.json?t=" + Date.now(), { cache: "no-store" });
+    if (!res.ok) return;
+    const latest = await res.json();
+    if (latest.exported_at && latest.exported_at !== STATIC.exported_at) {
+      setStatus("New data is up: reloading...", "ok");
+      location.reload();
+    }
+  } catch { /* offline: try again later */ }
+}
+if (STATIC) {
+  setInterval(checkForNewData, 5 * 60 * 1000);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") checkForNewData(); });
+}
+
+// Find any player and open his card.
+const fold = (text) => text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+function setupFinder() {
+  const input = $("player-search");
+  const list = $("player-results");
+  if (!input || !list) return;
+  let matches = [];
+  const hide = () => { list.hidden = true; list.replaceChildren(); };
+  const pick = (card) => { input.value = ""; hide(); openPlayer(String(card.id)); };
+  input.addEventListener("input", () => {
+    const q = fold(input.value.trim());
+    if (q.length < 2 || !currentView || !currentView.player_cards) { hide(); return; }
+    matches = Object.values(currentView.player_cards).filter((c) => fold(c.name).includes(q)).slice(0, 8);
+    list.replaceChildren(...matches.map((c) => {
+      const item = h("li", { role: "option" }, h("button", { type: "button" }, h("strong", {}, c.name), h("small", { class: "muted" }, ` ${c.positions} · ${c.pro_team} · ${c.owner}`)));
+      item.firstChild.addEventListener("click", () => pick(c));
+      return item;
+    }));
+    if (!matches.length) list.replaceChildren(h("li", { class: "muted none" }, "No player found"));
+    list.hidden = false;
+  });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && matches.length) { e.preventDefault(); pick(matches[0]); }
+    if (e.key === "Escape") { input.value = ""; hide(); }
+  });
+  document.addEventListener("click", (e) => { if (!e.target.closest(".finder")) hide(); });
+}
+setupFinder();
+
 loadState().catch((err) => setStatus("Could not load the dashboard: " + err, "error"));

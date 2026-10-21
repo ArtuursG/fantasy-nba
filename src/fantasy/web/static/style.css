@@ -591,3 +591,32 @@ svg.trend .axis { fill: var(--muted); font: 11px var(--text); }
 svg.trend .line { fill: none; stroke: var(--ink); stroke-width: 2; }
 svg.trend .dot { fill: var(--ink); }
 svg.trend .move { stroke: var(--spot); stroke-width: 2; opacity: 0.8; }
+
+/* Freshness and the player finder */
+.freshness { color: var(--muted); font-weight: 400; letter-spacing: 0.04em; }
+.freshness.stale { color: var(--loss); font-weight: 600; }
+.finder { position: relative; }
+.finder input { width: 180px; }
+.finder-results {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 5;
+  width: 300px; max-width: 90vw; margin: 0; padding: 4px 0; list-style: none;
+  background: var(--sheet); border: 1.5px solid var(--ink);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--ink) 18%, transparent);
+}
+.finder-results button {
+  display: block; width: 100%; text-align: left; border: 0; border-radius: 0;
+  padding: 7px 10px; font: 14px/1.3 var(--text); letter-spacing: 0; text-transform: none;
+  background: none; color: var(--ink);
+}
+.finder-results button:hover { background: var(--mine); color: var(--ink); }
+.finder-results .none { padding: 7px 10px; }
+@media (max-width: 600px) {
+  .finder { flex: 1 1 100%; }
+  .finder input { width: 100%; }
+  .finder-results { left: 0; right: auto; width: 100%; }
+}
+
+td.day-win { background: color-mix(in srgb, var(--win) 18%, transparent); }
+td.day-loss { background: color-mix(in srgb, var(--loss) 14%, transparent); }
+tr.day-games td { color: var(--muted); font-size: 12px; }
+tr.day-score td { font-weight: 600; border-top: 2px solid var(--ink); }

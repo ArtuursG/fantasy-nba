@@ -45,6 +45,10 @@ def export_site(app: FantasyApp, out: Path) -> Path:
     (out / "static" / "data.js").write_text(
         f"window.FANTASY_STATIC = {payload};\n", encoding="utf-8"
     )
+    # Polled by the open page, which reloads itself when a newer export is up.
+    (out / "static" / "version.json").write_text(
+        json.dumps({"exported_at": data["exported_at"]}), encoding="utf-8"
+    )
     page = (STATIC / "index.html").read_text(encoding="utf-8")
     page = page.replace(
         '<meta name="viewport"',
