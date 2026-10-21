@@ -21,6 +21,7 @@ USER_AGENT = "fantasy-report/0.1 (personal league snapshot)"
 TIMEOUT = 30.0
 MAX_RETRIES = 2
 CARD_BATCH = 40  # what espn-api uses for player cards
+DAILY_ROSTER_DAYS = 13  # a matchup is at most two weeks outside the playoffs
 
 LEAGUE_VIEWS = [
     "mTeam",
@@ -221,6 +222,19 @@ def fetch_bundle(
         )
     except EspnError as exc:
         raw["warnings"].append(f"Live matchup scores unavailable: {exc}")
+
+    log("lineups so far this week")
+    # ESPN fills the matchup totals in late; the lineup each team had on each
+    # day plus the box scores give the live totals, as ESPN's page shows them.
+    first = int((league.get("status") or {}).get("firstScoringPeriod") or 1)
+    raw["daily_rosters"] = {}
+    for day in range(max(first, sp - DAILY_ROSTER_DAYS), sp + 1):
+        try:
+            raw["daily_rosters"][str(day)] = client.league(
+                ["mRoster"], params={"scoringPeriodId": day}
+            )
+        except EspnError as exc:
+            raw["warnings"].append(f"Lineups for scoring period {day} unavailable: {exc}")
 
     log("NBA schedule")
     raw["pro_schedule"] = client.season_view("proTeamSchedules_wl")

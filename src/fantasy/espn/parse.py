@@ -14,9 +14,11 @@ from datetime import date, timedelta
 from typing import Any
 
 from fantasy.espn.constants import (
+    BENCH_SLOT,
     DEFAULT_CATEGORIES,
     DEFAULT_LINEUP_SLOTS,
     DEFAULT_POSITIONS,
+    NON_STARTING_SLOTS,
     PRO_TEAMS,
     RATING_KEYS,
     SPLIT_KEYS,
@@ -117,9 +119,18 @@ def parse_bundle(raw: dict[str, Any], team_hint: str | None, demo: bool = False)
         teams=teams,
         players=players,
         free_agent_ids=free_agent_ids,
-        matchups=merge_live_scores(
-            parse_matchups(league_raw, league.matchup_period, around=1),
-            parse_matchups(raw.get("scoreboard") or {}, league.matchup_period),
+        matchups=apply_lineup_totals(
+            merge_live_scores(
+                parse_matchups(league_raw, league.matchup_period, around=1),
+                parse_matchups(raw.get("scoreboard") or {}, league.matchup_period),
+            ),
+            lineup_totals(
+                raw.get("daily_rosters") or {},
+                players,
+                season,
+                league.matchup_periods.get(league.matchup_period) or [],
+            ),
+            league,
         ),
         transactions=transactions,
         pro_games=pro_games,
@@ -475,6 +486,109 @@ def merge_live_scores(matchups: list[Matchup], live: list[Matchup]) -> list[Matc
     """The scoreboard's current-week scores replace the league response's."""
     by_pair = {(m.period, m.home.team_id): m for m in live}
     return [by_pair.get((m.period, m.home.team_id), m) for m in matchups]
+
+
+TOTAL_FIELDS = {
+    "PTS": "pts",
+    "REB": "reb",
+    "AST": "ast",
+    "STL": "stl",
+    "BLK": "blk",
+    "TO": "to",
+    "3PM": "tpm",
+    "FGM": "fgm",
+    "FGA": "fga",
+    "FTM": "ftm",
+    "FTA": "fta",
+}
+
+
+def lineup_totals(
+    daily: dict[str, Any], players: dict[int, Player], season: int, sps: list[int]
+) -> dict[int, dict[str, float]]:
+    """Each team's category totals so far this matchup, from the lineup it
+    had each day (players in starting slots) and their box scores."""
+    totals: dict[int, dict[str, float]] = {}
+    wanted = set(sps)
+    for key, response in daily.items():
+        sp = int(key)
+        if sp not in wanted:
+            continue
+        for team in (response or {}).get("teams") or []:
+            team_id = int(team.get("id") or 0)
+            sums = totals.setdefault(team_id, dict.fromkeys(TOTAL_FIELDS, 0.0) | {"GP": 0.0})
+            for entry in (team.get("roster") or {}).get("entries") or []:
+                if int(entry.get("lineupSlotId", BENCH_SLOT)) in NON_STARTING_SLOTS:
+                    continue
+                game = _game_on(entry, players, season, sp)
+                if game is None or not game.played:
+                    continue
+                sums["GP"] += 1
+                for name, attr in TOTAL_FIELDS.items():
+                    sums[name] += getattr(game.line, attr)
+    return totals
+
+
+def _game_on(
+    entry: dict[str, Any], players: dict[int, Player], season: int, sp: int
+) -> Game | None:
+    player = players.get(int(entry.get("playerId") or 0))
+    if player is not None:
+        game = next((g for g in player.games if g.sp == sp), None)
+        if game is not None:
+            return game
+    stats = ((entry.get("playerPoolEntry") or {}).get("player") or {}).get("stats") or []
+    _, games = parse_stat_entries(stats, season)
+    return next((g for g in games if g.sp == sp), None)
+
+
+def apply_lineup_totals(
+    matchups: list[Matchup], totals: dict[int, dict[str, float]], league: League
+) -> list[Matchup]:
+    """Use the lineup totals for the current matchup when ESPN's own are
+    behind (fewer points than the box scores add up to)."""
+    for matchup in matchups:
+        if matchup.period != league.matchup_period or matchup.away is None:
+            continue
+        sides = (matchup.home, matchup.away)
+        mine = [totals.get(side.team_id) for side in sides]
+        if any(t is None for t in mine):
+            continue
+        espn_points = max(side.stats.get("PTS", 0.0) for side in sides)
+        live_points = max(t["PTS"] for t in mine)  # type: ignore[index]
+        if live_points <= espn_points:
+            continue
+        for side, sums in zip(sides, mine, strict=True):
+            stats = {k: v for k, v in sums.items() if k != "GP"}  # type: ignore[union-attr]
+            stats["FG%"] = stats["FGM"] / stats["FGA"] if stats["FGA"] else 0.0
+            stats["FT%"] = stats["FTM"] / stats["FTA"] if stats["FTA"] else 0.0
+            side.stats = stats
+        _score(matchup.home, matchup.away, league.categories)
+    return matchups
+
+
+def _score(home: MatchupSide, away: MatchupSide, categories: list[str]) -> None:
+    home.wins = home.losses = home.ties = 0
+    away.wins = away.losses = away.ties = 0
+    home.results, away.results = {}, {}
+    for cat in categories:
+        a, b = home.stats.get(cat), away.stats.get(cat)
+        if a is None or b is None:
+            continue
+        if cat == "TO":
+            a, b = -a, -b
+        if a > b:
+            home.results[cat], away.results[cat] = "WIN", "LOSS"
+            home.wins += 1
+            away.losses += 1
+        elif a < b:
+            home.results[cat], away.results[cat] = "LOSS", "WIN"
+            home.losses += 1
+            away.wins += 1
+        else:
+            home.results[cat] = away.results[cat] = "TIE"
+            home.ties += 1
+            away.ties += 1
 
 
 def parse_transactions(responses: list[Any]) -> list[Transaction]:

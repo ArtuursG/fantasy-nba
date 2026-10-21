@@ -34,6 +34,8 @@ def _serve_demo(raw: dict, calls: list):
             return httpx.Response(200, json=raw["transactions"][0])
         if "mTeam" in views:
             return httpx.Response(200, json=raw["league"])
+        if views == ["mRoster"]:
+            return httpx.Response(200, json={"teams": raw["league"]["teams"]})
         if "mScoreboard" in views:
             period = filters["schedule"]["filterMatchupPeriodIds"]["value"][0]
             schedule = [m for m in raw["league"]["schedule"] if m["matchupPeriodId"] == period]
@@ -134,3 +136,54 @@ def test_live_scoreboard_scores_win_over_the_league_response(raw_today):
         if m.period == period and m.home.team_id == live[0]["home"]["teamId"]
     )
     assert (home.wins, home.losses, home.stats["PTS"]) == (8, 1, 86)
+
+
+def test_lineup_totals_add_up_starters_box_scores_and_rescore_the_matchup(raw_today):
+    import copy
+
+    from fantasy.espn.parse import parse_bundle
+
+    raw = copy.deepcopy(raw_today)
+    league = raw["league"]
+    period = league["status"]["currentMatchupPeriod"]
+    sp = league["scoringPeriodId"]
+    pair = next(m for m in league["schedule"] if m["matchupPeriodId"] == period)
+    for side in ("home", "away"):
+        pair[side]["cumulativeScore"] = {"wins": 0, "losses": 0, "ties": 9, "scoreByStat": {}}
+
+    def entry(pid, slot, pts, fgm, fga):
+        stats = {"0": pts, "13": fgm, "14": fga, "40": 30, "42": 1}
+        game = {
+            "statSourceId": 0,
+            "statSplitTypeId": 5,
+            "scoringPeriodId": sp,
+            "seasonId": 2027,
+            "externalId": "401",
+            "stats": stats,
+        }
+        return {
+            "playerId": pid,
+            "lineupSlotId": slot,
+            "playerPoolEntry": {"player": {"id": pid, "stats": [game]}},
+        }
+
+    home, away = pair["home"]["teamId"], pair["away"]["teamId"]
+    raw["daily_rosters"] = {
+        str(sp): {
+            "teams": [
+                {
+                    "id": home,
+                    "roster": {
+                        "entries": [entry(990001, 0, 30, 10, 20), entry(990002, 12, 50, 20, 20)]
+                    },
+                },
+                {"id": away, "roster": {"entries": [entry(990003, 4, 20, 5, 25)]}},
+            ]
+        }
+    }
+    snap = parse_bundle(raw, "Home Team")
+    m = next(x for x in snap.matchups if x.period == period and x.home.team_id == home)
+    assert m.home.stats["PTS"] == 30  # the bench player's 50 doesn't count
+    assert m.home.stats["FG%"] == 0.5 and m.away.stats["FG%"] == 0.2
+    assert m.home.results["PTS"] == "WIN" and m.away.results["PTS"] == "LOSS"
+    assert m.home.wins >= 2 and m.home.wins + m.home.losses + m.home.ties == 9
