@@ -549,7 +549,8 @@ function openPlayer(pid) {
       recent ? stat("Last 15 days", signed(recent.value, 2)) : null,
       season ? stat("Rank", "#" + season.rank) : null,
       c.roster_pct !== null ? stat("Rostered", Math.round(c.roster_pct) + "%") : null,
-      c.playoff_games !== null && c.playoff_games !== undefined ? stat("Playoff-week games", String(c.playoff_games)) : null
+      c.playoff_games !== null && c.playoff_games !== undefined ? stat("Playoff-week games", String(c.playoff_games)) : null,
+      c.ros_games !== undefined ? stat("Games left, season", `${c.ros_games}${c.ros_median ? " (typical " + c.ros_median + ")" : ""}`) : null
     ),
     c.games.length ? [h("h3", {}, "Minutes, last " + c.games.length + " games"), sparkline(c.games.map((g) => g.min).reverse())] : null,
     c.history && c.history.length > 1 || (c.history && c.history.length && c.history[0].status !== "Healthy")
@@ -1172,6 +1173,7 @@ function renderRankings(view) {
       cls: row.owner_short === "ME" ? "mine" : null,
       cells: [
         row.live_round, row.live_rank, valueCell(row.punt_value), valueCell(row.league_value),
+        row.ros_games ?? "-", row.ros_factor === null || row.ros_factor === undefined ? "-" : valueCell(row.punt_value * row.ros_factor),
         { node: playerLink(row.name, row.id) }, row.pro_team, row.positions, row.owner_short, row.injury || "-", row.gp,
         num(row.min), num(row.pts), num(row.tpm), num(row.reb), num(row.ast), num(row.stl), num(row.blk),
         pct(row.fg_pct), num(row.fga), pct(row.ft_pct), num(row.fta), num(row.to), num(row.usage_proxy),
@@ -1179,9 +1181,9 @@ function renderRankings(view) {
       ],
     }));
     body.replaceChildren(table(
-      ["Rnd", "Rank", "Value", "LeagV", "Name", "Team", "Pos", "Owner", "Inj", "G", "MIN", "PTS", "3PM", "REB", "AST", "STL", "BLK", "FG%", "FGA", "FT%", "FTA", "TO", "USG~", ...cats.map((c) => VALUE_LABELS[c] || c)],
+      ["Rnd", "Rank", "Value", "LeagV", "ROS G", "ROS val", "Name", "Team", "Pos", "Owner", "Inj", "G", "MIN", "PTS", "3PM", "REB", "AST", "STL", "BLK", "FG%", "FGA", "FT%", "FTA", "TO", "USG~", ...cats.map((c) => VALUE_LABELS[c] || c)],
       rows,
-      { textCols: [4, 5, 6, 7, 8], tall: true }
+      { textCols: [6, 7, 8, 9, 10], tall: true }
     ));
   }
   draw();
@@ -1191,7 +1193,7 @@ function renderRankings(view) {
     controls,
     puntRow,
     body,
-    h("p", { class: "note" }, "Values are per-game z-scores against the rostered players (about +1 first round, 0 the edge of rosterable). Value leaves out punted categories; LeagV counts all. USG~ is a usage proxy: (FGA + 0.44 FTA + TO) per 36 minutes. Owner: ME, OPP, team abbreviation, FA or WA.")
+    h("p", { class: "note" }, "ROS G: the player's NBA team's regular-season games still to play; ROS val: Value scaled by those games against a typical team (more games, more value). Values are per-game z-scores against the rostered players (about +1 first round, 0 the edge of rosterable). Value leaves out punted categories; LeagV counts all. USG~ is a usage proxy: (FGA + 0.44 FTA + TO) per 36 minutes. Owner: ME, OPP, team abbreviation, FA or WA.")
   );
 }
 

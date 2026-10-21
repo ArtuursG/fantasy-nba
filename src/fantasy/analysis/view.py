@@ -38,7 +38,12 @@ from fantasy.analysis.schedule import (
     plan_days,
     positions,
 )
-from fantasy.analysis.season import playoff_games, playoff_sps, season_outlook
+from fantasy.analysis.season import (
+    playoff_games,
+    playoff_sps,
+    rest_of_season_games,
+    season_outlook,
+)
 from fantasy.analysis.simulator import simulate_moves, what_if
 from fantasy.analysis.stats import REVERSE_CATS, average, usage_proxy
 from fantasy.analysis.strategy import category_strategy, next_matchup
@@ -522,6 +527,13 @@ def build_view(
     recent_value = {r["id"]: r["value"] for r in ranking_rows["last15"]}
     for row in ranking_rows[ranking_range]:
         row["last15_value"] = recent_value.get(row["id"])
+    ros_games, ros_median = rest_of_season_games(ctx)
+    for rows in ranking_rows.values():
+        for row in rows:
+            team_id = snap.players[row["id"]].pro_team_id
+            games = ros_games.get(team_id, 0) if team_id else 0
+            row["ros_games"] = games
+            row["ros_factor"] = round(games / ros_median, 3) if ros_median else None
     free_agent_rows = [fa_row(item) for item in top_fa]
     streamer_rows = [
         fa_row(item)

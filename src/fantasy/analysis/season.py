@@ -20,6 +20,7 @@ from fantasy.analysis.schedule import starting_slots
 from fantasy.analysis.stats import CAT_FIELDS, PCT_FIELDS, REVERSE_CATS
 from fantasy.espn.constants import IR_SLOT, UNAVAILABLE_STATUSES
 from fantasy.models import COUNTING_FIELDS
+from fantasy.timeutil import parse_iso
 
 SIMS = 1000
 GAMES_PER_SLOT_PER_WEEK = 3.3
@@ -187,3 +188,23 @@ def season_outlook(ctx: Context, my_odds: dict[str, float] | None) -> dict | Non
 def _pct(record: list[float]) -> float:
     played = sum(record)
     return (record[0] + 0.5 * record[2]) / played if played else 0.0
+
+
+def regular_season_end(ctx: Context) -> int | None:
+    league = ctx.snap.league
+    if league.regular_periods and league.matchup_periods.get(league.regular_periods):
+        return max(league.matchup_periods[league.regular_periods])
+    return league.final_scoring_period or None
+
+
+def rest_of_season_games(ctx: Context) -> tuple[dict[int, int], float]:
+    """NBA team id -> regular-season games not yet started, and the median."""
+    end = regular_season_end(ctx)
+    counts: dict[int, int] = {}
+    for team_id, games in ctx.calendar.by_team.items():
+        counts[team_id] = sum(
+            1 for g in games if (end is None or g.sp <= end) and parse_iso(g.start) > ctx.now
+        )
+    values = sorted(c for tid, c in counts.items() if tid)
+    median = values[len(values) // 2] if values else 0.0
+    return counts, float(median)

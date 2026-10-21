@@ -457,3 +457,17 @@ def test_hot_free_agents_are_free_healthy_and_explained(view, today):
         assert r["id"] in free and r["signals"]
         assert today.players[r["id"]].injury_status not in ("OUT", "INJURY_RESERVE")
     assert [r["score"] for r in rows] == sorted((r["score"] for r in rows), reverse=True)
+
+
+def test_rest_of_season_games_scale_value(view, today):
+    from fantasy.analysis.season import rest_of_season_games
+
+    ctx = Context.build(today)
+    games, median = rest_of_season_games(ctx)
+    assert median > 0
+    row = view["rankings"]["rows"][view["rankings"]["default"]][0]
+    team = today.players[row["id"]].pro_team_id
+    assert row["ros_games"] == games[team]
+    assert row["ros_factor"] == pytest.approx(games[team] / median, abs=0.001)
+    card = view["player_cards"][str(row["id"])]
+    assert card["ros_games"] == games[team]

@@ -11,7 +11,7 @@ from datetime import UTC, datetime, tzinfo
 
 from fantasy.analysis.context import Context
 from fantasy.analysis.schedule import game_started, positions
-from fantasy.analysis.season import playoff_games, playoff_sps
+from fantasy.analysis.season import playoff_games, playoff_sps, rest_of_season_games
 from fantasy.espn.constants import HEALTH_LABELS
 from fantasy.models import Game, Player, StatLine
 from fantasy.timeutil import day_label, parse_iso
@@ -32,10 +32,13 @@ def player_cards(
     ranked = {key: {r["id"]: r for r in rows} for key, rows in rankings.items()}
     cards = {}
     po_sps = playoff_sps(ctx)
+    ros_games, ros_median = rest_of_season_games(ctx)
     for pid in sorted(ids):
         player = snap.players.get(pid)
         if player is not None:
             cards[str(pid)] = _card(ctx, player, ranked, po_sps)
+            cards[str(pid)]["ros_games"] = ros_games.get(player.pro_team_id, 0)
+            cards[str(pid)]["ros_median"] = ros_median
             cards[str(pid)]["history"] = status_history(
                 ctx, player, (history or {}).get(pid, []), tz or UTC
             )
