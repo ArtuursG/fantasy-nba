@@ -16,6 +16,7 @@ from fantasy.analysis.changes import compare
 from fantasy.analysis.context import Context
 from fantasy.analysis.freeagents import rank_free_agents
 from fantasy.analysis.habits import apply_lineup_waste, lineup_habits
+from fantasy.analysis.hot import hot_free_agents
 from fantasy.analysis.lineup import lineup_check
 from fantasy.analysis.matchup import (
     SideProjection,
@@ -602,6 +603,7 @@ def build_view(
         "transactions": _transactions(ctx, prev),
         "pickups": _pickups(ctx, opp_id, prev),
         "habits": _habit_rows(ctx, habits, opp_id),
+        "hot_free_agents": hot_free_agents(ctx, roles, opps, strength),
         "player_cards": player_cards(ctx, ranking_rows, status_history or {}, tz),
         "season_outlook": season_outlook(
             ctx,

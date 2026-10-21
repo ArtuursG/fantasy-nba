@@ -1032,6 +1032,24 @@ function renderPickups(v) {
   return card("Other teams' pickups", true, h("p", { class: "note" }, "Last 7 days, your opponent first. Stats per game over the last 15 days."), body);
 }
 
+function renderHot(v) {
+  const rows = v.hot_free_agents;
+  if (!rows || !rows.length) return null;
+  const cls = { high: "bad", medium: "warn", some: "" };
+  return card(
+    "Likely to be picked up soon",
+    true,
+    h("p", { class: "note" }, "Free agents with momentum: ESPN add trend, a bigger role, an injured teammate's minutes, and how many teams in this league are weak in the categories he's good at. Grab before someone else does."),
+    table(["Player", "Pos", "Team", "Ros%", "Add trend", "Value", "Good at", "Teams that need him", "Why", "Chance", ""], rows.map((r) => ({
+      cells: [
+        { node: playerLink(r.name, r.id), cls: "strong" }, r.positions, r.pro_team, num(r.roster_pct), signed(r.add_trend),
+        valueCell(r.value), r.strong.join(", ") || "-", { node: r.demand.length ? `${r.demand.length}: ${r.demand.slice(0, 3).join(", ")}${r.demand.length > 3 ? "…" : ""}` : "-" },
+        r.signals.join("; "), tag(r.likelihood, cls[r.likelihood]), { node: tryButton(r.id) },
+      ],
+    })), { textCols: [0, 1, 2, 6, 7, 8], wrapCols: [7, 8] })
+  );
+}
+
 function renderTransactions(v) {
   const rows = v.transactions;
   if (!rows.length) return card("Transactions, 7 days", false, h("p", { class: "muted" }, "None."));
@@ -1332,7 +1350,7 @@ function render(view, demo) {
     today: [renderActions(view), renderScoreboard(view), renderLineup(view), renderChanges(view), renderAlerts(view), renderAcquisitions(view), renderPickups(view)],
     matchup: [renderMatchup(view), renderTrend(view), renderByDay(view), renderTargets(view), renderWhatIf(view), renderGameCounts(view), renderWeekGrid(view), renderStrategy(view), renderAccuracy(view), renderSchedule(view), renderStreamPlan(view), renderSimulator(view), renderNextMatchup(view)],
     roster: [renderMyRoster(view), renderAdvanced(view)],
-    wire: [renderPickups(view), renderFreeAgents(view), renderTransactions(view), renderPopular(view)],
+    wire: [renderPickups(view), renderHot(view), renderFreeAgents(view), renderTransactions(view), renderPopular(view)],
     league: [renderSeasonOutlook(view), renderHabits(view), renderStrength(view), renderSeason(view), renderTrade(view), renderTeams(view)],
     rankings: [renderRankings(view)],
     report: [renderReport()],

@@ -219,6 +219,7 @@ class Report:
         self.strategy()
         self.transactions()
         self.free_agents()
+        self.hot_free_agents()
         self.simulator()
         self.stream_plan()
         self.opponent_changes()
@@ -857,6 +858,24 @@ class Report:
                 self.add(f"- ADD {a['name']} ({' | '.join(bits)})")
             if team["drops"]:
                 self.add(f"- DROP {', '.join(team['drops'])}")
+
+    def hot_free_agents(self) -> None:
+        rows = self.view.get("hot_free_agents")
+        if not rows:
+            return
+        self.section("FREE AGENTS LIKELY TO GO SOON")
+        self.add(
+            "Momentum free agents (ESPN add trend, bigger role, injured teammate, teams in this "
+            "league weak in his categories). Chance = how likely someone takes him soon.",
+            "",
+        )
+        for r in rows:
+            demand = f"{len(r['demand'])} teams need him" if r["demand"] else "no clear need"
+            self.add(
+                f"- {r['name']} ({r['positions']}, {r['pro_team']}) | chance {r['likelihood']} | "
+                f"value {signed(r['value'], 2)} | good at {', '.join(r['strong']) or '-'} | "
+                f"{demand} | {'; '.join(r['signals'])}"
+            )
 
     def transactions(self) -> None:
         self.section("LEAGUE TRANSACTIONS SINCE LAST REPORT")

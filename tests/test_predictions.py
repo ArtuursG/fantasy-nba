@@ -447,3 +447,13 @@ def test_lineup_habits_count_games_left_on_the_bench(today):
     habits = lineup_habits(ctx, 2)
     assert habits["days"] == 1 and habits["lost_games"] == 1
     assert habits["waste_rate"] == 0.0  # too few days to judge a habit
+
+
+def test_hot_free_agents_are_free_healthy_and_explained(view, today):
+    rows = view["hot_free_agents"]
+    assert rows and len(rows) <= 10
+    free = set(today.free_agent_ids)
+    for r in rows:
+        assert r["id"] in free and r["signals"]
+        assert today.players[r["id"]].injury_status not in ("OUT", "INJURY_RESERVE")
+    assert [r["score"] for r in rows] == sorted((r["score"] for r in rows), reverse=True)
