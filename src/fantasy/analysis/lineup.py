@@ -4,6 +4,7 @@ an injured starter or a forgotten IR move."""
 
 from __future__ import annotations
 
+from dataclasses import replace
 from zoneinfo import ZoneInfo
 
 from fantasy.analysis.context import Context
@@ -64,10 +65,21 @@ def _pair_swaps(
     return swaps
 
 
+def lineup_for_day(ctx: Context, team: Team, sp: int) -> Team:
+    """The team with the lineup slots ESPN has set for scoring period `sp`
+    (a lineup can be set ahead), or as it stands when that day wasn't read."""
+    slots = ctx.snap.lineups.get(sp, {}).get(team.id)
+    if not slots:
+        return team
+    roster = [replace(s, slot_id=slots.get(s.player_id, s.slot_id)) for s in team.roster]
+    return replace(team, roster=roster)
+
+
 def lineup_check(ctx: Context, team: Team, tz: ZoneInfo, ir_flags: list[str]) -> dict | None:
     sp = _next_day_with_games(ctx)
     if sp is None:
         return None
+    team = lineup_for_day(ctx, team, sp)
     (plan,) = plan_days(ctx.calendar, ctx.snap, team, ctx.values, [sp], ctx.now) or [None]
     if plan is None:
         return None

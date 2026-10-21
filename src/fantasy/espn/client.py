@@ -228,7 +228,9 @@ def fetch_bundle(
     # day plus the box scores give the live totals, as ESPN's page shows them.
     first = int((league.get("status") or {}).get("firstScoringPeriod") or 1)
     raw["daily_rosters"] = {}
-    for day in range(max(first, sp - DAILY_ROSTER_DAYS), sp + 1):
+    # Tomorrow too: early in the (European) morning ESPN's current scoring
+    # period is still yesterday, and the lineup to check is the next day's.
+    for day in range(max(first, sp - DAILY_ROSTER_DAYS), sp + 2):
         try:
             raw["daily_rosters"][str(day)] = client.league(
                 ["mRoster"], params={"scoringPeriodId": day}

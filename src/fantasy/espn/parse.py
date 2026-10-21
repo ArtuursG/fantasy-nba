@@ -136,6 +136,7 @@ def parse_bundle(raw: dict[str, Any], team_hint: str | None, demo: bool = False)
         pro_games=pro_games,
         pro_teams=pro_teams,
         warnings=warnings,
+        lineups=parse_lineups(raw.get("daily_rosters") or {}),
         demo=demo,
     )
 
@@ -501,6 +502,20 @@ TOTAL_FIELDS = {
     "FTM": "ftm",
     "FTA": "fta",
 }
+
+
+def parse_lineups(daily: dict[str, Any]) -> dict[int, dict[int, dict[int, int]]]:
+    lineups: dict[int, dict[int, dict[int, int]]] = {}
+    for key, response in daily.items():
+        for team in (response or {}).get("teams") or []:
+            slots = {
+                int(e["playerId"]): int(e.get("lineupSlotId", BENCH_SLOT))
+                for e in (team.get("roster") or {}).get("entries") or []
+                if e.get("playerId")
+            }
+            if slots:
+                lineups.setdefault(int(key), {})[int(team.get("id") or 0)] = slots
+    return lineups
 
 
 def lineup_totals(

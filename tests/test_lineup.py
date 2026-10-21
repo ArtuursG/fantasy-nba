@@ -46,6 +46,14 @@ def _league(injured_starter: bool):
     return snap, Context.build(snap)
 
 
+def test_check_reads_the_lineup_set_for_that_day():
+    snap, _ = _league(injured_starter=False)
+    # Set ahead in ESPN for scoring period 10: Bench C starts, Idle C sits.
+    snap.lineups = {10: {1: {1: PG, 2: BE, 3: C, 4: UTIL}}}
+    check = lineup_check(Context.build(snap), snap.team(1), RIGA, [])
+    assert check["swaps"] == [] and check["current_starts"] == check["best_starts"]
+
+
 def test_idle_and_injured_starters_are_swapped_out():
     snap, ctx = _league(injured_starter=True)
     check = lineup_check(ctx, snap.team(1), RIGA, [])

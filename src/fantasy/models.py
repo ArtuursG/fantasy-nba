@@ -212,6 +212,9 @@ class Snapshot:
     pro_games: list[ProGame]
     pro_teams: dict[int, str]
     warnings: list[str] = field(default_factory=list)
+    # Lineup slots as ESPN has them set for each scoring period fetched:
+    # scoring period -> team id -> player id -> slot id.
+    lineups: dict[int, dict[int, dict[int, int]]] = field(default_factory=dict)
     demo: bool = False
     schema: int = SCHEMA_VERSION
 
