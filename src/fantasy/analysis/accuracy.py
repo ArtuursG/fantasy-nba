@@ -98,3 +98,25 @@ def win_chance_trend(
         pt["label"] = local.strftime("%a %H:%M")
         pt["expected"] = round(pt["expected"], 2)
     return {"points": rows, "moves": moves or []}
+
+
+def first_forecast(forecasts: list[tuple[str, int, str, float]], recap: dict) -> dict | None:
+    """The first forecast made for a finished matchup, against how it went."""
+    period = recap["period"]
+    first_at = min((f[0] for f in forecasts if f[1] == period), default=None)
+    if first_at is None:
+        return None
+    odds = {cat: p for at, item, cat, p in forecasts if at == first_at and item == period}
+    results = {c["cat"]: c["result"] for c in recap["categories"]}
+    called = [
+        cat
+        for cat, p in odds.items()
+        if cat in results and results[cat] != "TIE" and (p > 0.5) == (results[cat] == "WIN")
+    ]
+    judged = [cat for cat in odds if cat in results and results[cat] != "TIE"]
+    return {
+        "at": first_at,
+        "p_win_matchup": odds.get("*"),
+        "called": len(called),
+        "judged": len(judged),
+    }

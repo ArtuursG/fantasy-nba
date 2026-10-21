@@ -9,7 +9,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from fantasy.analysis.accuracy import forecast_accuracy, win_chance_trend
+from fantasy.analysis.accuracy import first_forecast, forecast_accuracy, win_chance_trend
 from fantasy.analysis.context import Context
 from fantasy.analysis.trade import TradeError, evaluate_trade
 from fantasy.analysis.view import build_view
@@ -114,6 +114,8 @@ class FantasyApp:
         )
         forecasts, results = self.store.forecast_history(snapshot.league.id, snapshot.league.season)
         view["accuracy"] = forecast_accuracy(forecasts, results)
+        if view.get("recap"):
+            view["recap"]["forecast"] = first_forecast(forecasts, view["recap"])
         if view.get("matchup"):
             view["trend"] = win_chance_trend(
                 forecasts, view["matchup"]["period"], self.config.tz, _my_moves(snapshot)

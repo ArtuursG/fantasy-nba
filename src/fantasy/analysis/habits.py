@@ -18,12 +18,16 @@ from fantasy.timeutil import EASTERN
 MIN_DAYS = 3
 
 
-def lineup_habits(ctx: Context, team_id: int) -> dict:
+def lineup_habits(ctx: Context, team_id: int, sps: list[int] | None = None) -> dict:
+    """`sps` limits it to those days (one matchup)."""
     snap = ctx.snap
     slots = len(starting_slots(snap.league.lineup_slots))
     today = ctx.now.astimezone(EASTERN).date()
     lost = starts = days = 0
+    wanted = set(sps) if sps is not None else None
     for sp in sorted(snap.lineups):
+        if wanted is not None and sp not in wanted:
+            continue
         day = ctx.calendar.date_of(sp)
         lineup = snap.lineups[sp].get(team_id)
         if day is None or day >= today or not lineup:

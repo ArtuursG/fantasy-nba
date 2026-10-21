@@ -217,6 +217,42 @@ function renderMatchup(v) {
   );
 }
 
+// The first two days of a matchup: last week's recap is still news.
+function earlyInWeek(v) {
+  const g = v.week_grid;
+  return Boolean(v.recap && g && g.days.filter((d) => d.past).length <= 2);
+}
+
+function renderRecap(v) {
+  const r = v.recap;
+  if (!r) return null;
+  const fmt = (cat, x) => (cat.endsWith("%") ? pct(x) : num(x, 0));
+  const margin = (c) => (c.cat.endsWith("%") ? (c.margin >= 0 ? "+" : "") + (c.margin * 100).toFixed(1) + " pts" : signed(c.margin, 0));
+  const rows = r.categories.map((c) => ({
+    cells: [
+      { node: c.cat, cls: "strong" }, fmt(c.cat, c.me), fmt(c.cat, c.opp),
+      { node: margin(c), cls: c.margin > 0 ? "good" : c.margin < 0 ? "bad" : "" },
+      { node: [c.result, c.close ? tag("close", "warn") : null], cls: c.result === "WIN" ? "good" : c.result === "LOSS" ? "bad" : "" },
+    ],
+  }));
+  const score = `${r.score.wins}-${r.score.losses}-${r.score.ties}`;
+  const f = r.forecast;
+  return card(
+    `Last week: ${r.result === "WIN" ? "won" : r.result === "LOSS" ? "lost" : "tied"} ${score} vs ${r.opponent}`,
+    true,
+    stats(
+      stat("Result", score, r.result === "WIN" ? "good" : r.result === "LOSS" ? "bad" : ""),
+      r.games.me !== null ? stat("Games played", `${r.games.me} vs ${r.games.opp ?? "-"}`) : null,
+      r.bench_games.me !== null ? stat("Left on bench", `${r.bench_games.me} vs ${r.bench_games.opp ?? "-"}`) : null,
+      r.acquisitions.used !== null ? stat("Acquisitions used", `${r.acquisitions.used} / ${r.acquisitions.limit}`) : null,
+      f && f.p_win_matchup !== null ? stat("Forecast at the start", percent(f.p_win_matchup)) : null
+    ),
+    r.notes.length ? h("ul", { class: "plain" }, r.notes.map((n) => h("li", {}, n))) : null,
+    table(["Cat", "You", "Opponent", "Margin", "Result"], rows),
+    h("p", { class: "note" }, `${r.dates[0]} – ${r.dates[1]}. Close: within 6% (1.2 points for percentages).` + (f ? ` The first forecast of the week called ${f.called} of ${f.judged} categories right.` : ""))
+  );
+}
+
 function renderByDay(v) {
   const mu = v.matchup;
   if (!mu || !mu.by_day || !mu.by_day.length) return null;
@@ -1370,8 +1406,8 @@ function render(view, demo) {
   const fixes = view.actions ? view.actions.todo_count : c ? c.swaps.length + c.bench.length + c.ir.length : 0;
   // Some panels are absent (no matchup, no season totals yet): skip them.
   const sections = {
-    today: [renderActions(view), renderScoreboard(view), renderLineup(view), renderChanges(view), renderAlerts(view), renderAcquisitions(view), renderPickups(view)],
-    matchup: [renderMatchup(view), renderTrend(view), renderByDay(view), renderTargets(view), renderWhatIf(view), renderGameCounts(view), renderWeekGrid(view), renderStrategy(view), renderAccuracy(view), renderSchedule(view), renderStreamPlan(view), renderSimulator(view), renderNextMatchup(view)],
+    today: [renderActions(view), earlyInWeek(view) ? renderRecap(view) : null, renderScoreboard(view), renderLineup(view), renderChanges(view), renderAlerts(view), renderAcquisitions(view), renderPickups(view)],
+    matchup: [renderMatchup(view), renderTrend(view), renderByDay(view), renderRecap(view), renderTargets(view), renderWhatIf(view), renderGameCounts(view), renderWeekGrid(view), renderStrategy(view), renderAccuracy(view), renderSchedule(view), renderStreamPlan(view), renderSimulator(view), renderNextMatchup(view)],
     roster: [renderMyRoster(view), renderAdvanced(view)],
     wire: [renderPickups(view), renderHot(view), renderFreeAgents(view), renderTransactions(view), renderPopular(view)],
     league: [renderSeasonOutlook(view), renderPunt(view), renderHabits(view), renderStrength(view), renderSeason(view), renderTrade(view), renderTeams(view)],

@@ -484,3 +484,29 @@ def test_punt_analysis_compares_options(view):
         assert r["cost"] > 0 and r["expected_cats"] < none["expected_cats"] + 1e-9
         assert 1 <= r["place"] <= 10
     assert pa["best"] in labels
+
+
+def test_recap_of_the_previous_matchup(view, today):
+    r = view["recap"]
+    assert r["period"] == today.league.matchup_period - 1
+    assert len(r["categories"]) == len(today.league.categories)
+    assert r["score"]["wins"] + r["score"]["losses"] + r["score"]["ties"] == len(r["categories"])
+    for c in r["categories"]:
+        assert (c["margin"] > 0) == (c["result"] == "WIN") or c["result"] == "TIE"
+
+
+def test_first_forecast_scores_the_calls():
+    from fantasy.analysis.accuracy import first_forecast
+
+    recap = {
+        "period": 4,
+        "categories": [{"cat": "PTS", "result": "WIN"}, {"cat": "REB", "result": "LOSS"}],
+    }
+    forecasts = [
+        ("2026-10-05T08:00:00+00:00", 4, "PTS", 0.7),
+        ("2026-10-05T08:00:00+00:00", 4, "REB", 0.6),
+        ("2026-10-05T08:00:00+00:00", 4, "*", 0.55),
+        ("2026-10-06T08:00:00+00:00", 4, "*", 0.9),
+    ]
+    f = first_forecast(forecasts, recap)
+    assert f["p_win_matchup"] == 0.55 and f["called"] == 1 and f["judged"] == 2

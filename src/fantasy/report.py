@@ -216,6 +216,7 @@ class Report:
         self.matchup()
         self.game_counts()
         self.week_grid()
+        self.recap()
         self.strategy()
         self.transactions()
         self.free_agents()
@@ -783,6 +784,52 @@ class Report:
                 ),
             )
         )
+
+    def recap(self) -> None:
+        r = self.view.get("recap")
+        if not r:
+            return
+        self.section("LAST MATCHUP RECAP")
+        score = f"{r['score']['wins']}-{r['score']['losses']}-{r['score']['ties']}"
+        self.add(
+            f"Matchup {r['period']} ({r['dates'][0]} - {r['dates'][1]}) vs {r['opponent']}: "
+            f"{r['result']} {score}."
+        )
+        facts = []
+        if r["games"]["me"] is not None:
+            facts.append(f"games played {r['games']['me']} vs {r['games']['opp']}")
+        if r["bench_games"]["me"] is not None:
+            facts.append(f"left on bench {r['bench_games']['me']} vs {r['bench_games']['opp']}")
+        if r["acquisitions"]["used"] is not None:
+            facts.append(
+                f"acquisitions used {r['acquisitions']['used']}/{r['acquisitions']['limit']}"
+            )
+        forecast = r.get("forecast")
+        if forecast and forecast["p_win_matchup"] is not None:
+            facts.append(
+                f"first forecast {forecast['p_win_matchup'] * 100:.0f}% to win, "
+                f"{forecast['called']}/{forecast['judged']} category calls right"
+            )
+        if facts:
+            self.add("; ".join(facts) + ".")
+        rows = []
+        for c in r["categories"]:
+            pct_cat = c["cat"].endswith("%")
+            fmt = (lambda v: f"{v:.3f}") if pct_cat else (lambda v: f"{v:.0f}")
+            margin = f"{c['margin'] * 100:+.1f} pts" if pct_cat else f"{c['margin']:+.0f}"
+            rows.append(
+                [
+                    c["cat"],
+                    fmt(c["me"]),
+                    fmt(c["opp"]),
+                    margin,
+                    c["result"] + (" (close)" if c["close"] else ""),
+                ]
+            )
+        self.add("")
+        self.lines.extend(table(["Cat", "Me", "Opp", "Margin", "Result"], rows))
+        if r["notes"]:
+            self.add("", *(f"- {n}" for n in r["notes"]))
 
     def todo(self) -> None:
         actions = self.view.get("actions")

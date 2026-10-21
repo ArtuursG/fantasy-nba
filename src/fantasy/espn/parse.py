@@ -141,7 +141,9 @@ def parse_bundle(raw: dict[str, Any], team_hint: str | None, demo: bool = False)
             raw.get("daily_rosters") or {},
             players,
             season,
-            league.matchup_periods.get(league.matchup_period) or [],
+            # The previous matchup too, for its recap.
+            (league.matchup_periods.get(league.matchup_period - 1) or [])
+            + (league.matchup_periods.get(league.matchup_period) or []),
         ),
         pairings=parse_pairings(league_raw),
         demo=demo,
