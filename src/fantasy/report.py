@@ -207,6 +207,7 @@ class Report:
 
     def render(self) -> str:
         self.header()
+        self.todo()
         self.rules()
         self.lineup()
         self.my_roster()
@@ -247,9 +248,10 @@ class Report:
             "Played = games so far (box scores of the current roster, max one per starting "
             "slot a day). Left = remaining games that fit a starting slot; Expected = those "
             "weighted by the chance the player plays (DTD 70% today and tomorrow, 85% after; "
-            "Questionable 50%; Doubtful 20%; OUT 0 until the expected return). Total = "
-            "Played + Expected. OUT = games lost to OUT players; No slot = games with no "
-            "free slot.",
+            "Questionable 50%; Doubtful 20%; OUT 0 until the expected return). Streams = games "
+            "other teams are expected to add with pickups (acquisitions left and their usual "
+            "pace; none for me). Total = Played + Expected + Streams. OUT = games lost to OUT "
+            "players; No slot = games with no free slot.",
             "",
         )
         self.lines.extend(
@@ -260,6 +262,7 @@ class Report:
                     "Played",
                     "Left",
                     "Expected",
+                    "Streams",
                     "Total",
                     "Edge",
                     "OUT",
@@ -273,6 +276,7 @@ class Report:
                         r["played"],
                         r["usable_remaining"],
                         f"{r['expected_remaining']:.1f}",
+                        f"+{r['stream_games']:.1f}" if r["stream_games"] else "-",
                         f"{r['expected_total']:.1f}",
                         signed(r.get("edge")),
                         r["out_games"],
@@ -724,6 +728,39 @@ class Report:
                 ),
             )
         )
+
+    def todo(self) -> None:
+        actions = self.view.get("actions")
+        if not actions:
+            return
+        self.section("TO DO NOW")
+        when = actions["day"] or "-"
+        lock = f", first tip-off {actions['lock']}" if actions["lock"] else ""
+        status = "set" if actions["lineup_ok"] else "needs changes"
+        line = f"Lineup for {when}{lock}: {status}."
+        if actions["win_chance"] is not None:
+            line += (
+                f" Matchup win chance {actions['win_chance'] * 100:.0f}%, projected "
+                f"{actions['projected_record']}."
+            )
+        self.add(line, "")
+        labels = {
+            "lineup": "LINEUP",
+            "check": "CHECK",
+            "pickup": "PICKUP",
+            "opponent": "OPPONENT",
+            "focus": "FOCUS",
+        }
+        for item in actions["items"]:
+            extra = []
+            if item["why"]:
+                extra.append(item["why"])
+            if item["when"]:
+                extra.append(item["when"])
+            tail = f" ({'; '.join(extra)})" if extra else ""
+            self.add(f"- [{labels.get(item['kind'], item['kind'].upper())}] {item['text']}{tail}")
+        if not actions["items"]:
+            self.add("- Nothing to do.")
 
     def pickups(self) -> None:
         self.section("WHAT OTHER TEAMS PICKED UP (LAST 7 DAYS)")

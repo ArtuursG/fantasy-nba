@@ -280,3 +280,18 @@ def test_weekly_rate_prefers_own_then_league_pace(snapshots):
     assert weekly_rate(ctx, team) == (4.0, "league pace")
     team.matchup_acquisitions = {period - 2: 1, period - 1: 3, period: 2}
     assert weekly_rate(ctx, team) == (2.0, "own pace")
+
+
+def test_player_cards_cover_rosters_and_free_agents(view, today):
+    cards = view["player_cards"]
+    rostered = {s.player_id for t in today.teams for s in t.roster}
+    assert rostered <= {int(k) for k in cards}
+    mine = view["my_team"]["roster"][0]
+    card = cards[str(mine["id"])]
+    assert card["name"] == mine["name"] and card["owner"] == "MY TEAM"
+    assert card["games"] and len(card["games"]) <= 10
+    assert card["games"][0]["vs"] and "pts" in card["games"][0]
+    assert "season" in card["splits"] or "projected" in card["splits"]
+    assert card["values"]
+    fa = cards[str(view["free_agents"][0]["id"])]
+    assert fa["owner"] in ("FA", "WA")

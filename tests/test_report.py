@@ -3,6 +3,7 @@ import re
 from fantasy.report import render_report
 
 SECTIONS = [
+    "TO DO NOW",
     "LEAGUE RULES",
     "TODAY'S LINEUP CHECK",
     "MY ROSTER",
@@ -79,3 +80,15 @@ def test_report_lists_what_other_teams_picked_up(view):
     text = render_report(view)
     section = text.split("## WHAT OTHER TEAMS PICKED UP")[1].split("\n## ")[0]
     assert f"- ADD {add['name']} (" in section and "acquisitions this matchup" in section
+
+
+def test_to_do_list_leads_the_report(view):
+    actions = view["actions"]
+    kinds = [i["kind"] for i in actions["items"]]
+    # The demo has a starter without a game and an opponent with moves left.
+    assert "lineup" in kinds and "opponent" in kinds
+    assert actions["todo_count"] == sum(k in ("lineup", "check", "pickup") for k in kinds)
+    text = render_report(view)
+    section = text.split("## TO DO NOW")[1].split("\n## ")[0]
+    assert "[LINEUP] Start " in section and "win chance" in section
+    assert text.index("## TO DO NOW") < text.index("## LEAGUE RULES")

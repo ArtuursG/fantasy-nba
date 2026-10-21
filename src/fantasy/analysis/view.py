@@ -9,7 +9,9 @@ from __future__ import annotations
 from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 
+from fantasy.analysis.actions import build_actions
 from fantasy.analysis.advanced import advanced_stats
+from fantasy.analysis.cards import player_cards
 from fantasy.analysis.changes import compare
 from fantasy.analysis.context import Context
 from fantasy.analysis.freeagents import rank_free_agents
@@ -497,13 +499,14 @@ def build_view(
     changes = compare(ctx, prev)
     alert_ids = [r["player_id"] for r in top_fa]
 
-    return {
+    view = {
         "game_counts": league_game_counts(ctx, add_streaming),
         "what_if": whatif,
         "week_grid": week_grid(ctx, me, snap.team(opp_id) if opp_id else None) if me else None,
         "meta": {
             "date": ctx.now.astimezone(tz).date().isoformat(),
             "fetched_at": ctx.now.astimezone(tz).strftime("%Y-%m-%d %H:%M"),
+            "fetched_at_iso": ctx.now.isoformat(),
             "timezone": str(tz),
             "league": league.name,
             "league_id": league.id,
@@ -553,6 +556,7 @@ def build_view(
         ],
         "transactions": _transactions(ctx, prev),
         "pickups": _pickups(ctx, opp_id, prev),
+        "player_cards": player_cards(ctx, ranking_rows),
         "free_agents": free_agent_rows,
         "popular_free_agents": [
             {
@@ -590,6 +594,8 @@ def build_view(
         "changes": changes,
         "changes_week": compare(ctx, week_ago, ownership_step=10.0),
     }
+    view["actions"] = build_actions(view)
+    return view
 
 
 def _season_standings(ctx: Context) -> list[dict] | None:

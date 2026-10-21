@@ -29,6 +29,8 @@ const STATS = [["3PM", "tpm"], ["REB", "reb"], ["AST", "ast"], ["STL", "stl"], [
 const CALL_CLASS = { "Likely win": "good", "Likely loss": "bad" };
 
 let reportText = "";
+let currentView = null;
+let whatIfSelect = null;
 // Set by static/data.js when the dashboard is hosted as static files
 // (`fantasy export`): no server, so no refresh, settings or trade evaluator.
 const STATIC = window.FANTASY_STATIC || null;
@@ -55,6 +57,12 @@ function stats(...items) {
 
 function tag(text, cls) {
   return h("span", { class: "chip" + (cls ? " " + cls : "") }, text);
+}
+
+// A player's name that opens his card.
+function playerLink(name, id) {
+  if (!id || !currentView || !currentView.player_cards || !currentView.player_cards[id]) return name;
+  return h("button", { type: "button", class: "plink", "data-pid": id }, name);
 }
 
 function probBar(p, cls) {
@@ -279,6 +287,14 @@ function renderWhatIf(v) {
   dropSel.addEventListener("change", draw);
   fillAdds();
   draw();
+  whatIfSelect = (pid) => {
+    if (!adds.some((p) => String(p.id) === String(pid))) return false;
+    search.value = "";
+    fillAdds();
+    addSel.value = String(pid);
+    draw();
+    return true;
+  };
   return card(
     "What if: try a pickup",
     true,
@@ -290,6 +306,154 @@ function renderWhatIf(v) {
     out
   );
 }
+
+function tryButton(pid) {
+  const w = currentView && currentView.what_if;
+  if (!w || !w.adds.some((p) => p.id === pid)) return "";
+  const b = h("button", { type: "button", class: "mini" }, "Try");
+  b.addEventListener("click", () => tryPickup(pid));
+  return b;
+}
+
+function tryPickup(pid) {
+  closePlayer();
+  location.hash = "#matchup";
+  showTab("matchup");
+  if (whatIfSelect && whatIfSelect(pid)) {
+    const panel = [...document.querySelectorAll(".section:not([hidden]) .panel h2")].find((x) => x.textContent.startsWith("What if"));
+    if (panel) panel.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+}
+
+const ACTION_TAGS = {
+  lineup: ["Lineup", "bad"],
+  check: ["Check", "warn"],
+  pickup: ["Pickup", "good"],
+  opponent: ["Opponent", ""],
+  focus: ["Focus", ""],
+};
+
+function renderActions(v) {
+  const a = v.actions;
+  if (!a) return null;
+  const status = a.lineup_ok ? "Lineup set" : "Lineup needs changes";
+  const items = a.items.map((item) => {
+    const [label, cls] = ACTION_TAGS[item.kind] || [item.kind, ""];
+    const text = item.player_id ? textWithLink(item.text, item.player_id) : item.text;
+    return h("li", { class: "todo-" + item.kind },
+      tag(label, cls),
+      h("span", { class: "todo-text" }, text, item.why ? h("small", { class: "muted" }, item.why) : null),
+      item.when ? h("span", { class: "todo-when" }, item.when) : null);
+  });
+  return h("section", { class: "panel wide todo" },
+    h("h2", {}, "What to do now"),
+    stats(
+      stat(a.is_today ? "Tonight" : a.day || "Next games", status, a.lineup_ok ? "good" : "bad"),
+      a.lock ? stat("First tip-off", a.lock) : null,
+      a.win_chance !== null && a.win_chance !== undefined ? stat("Win chance", percent(a.win_chance)) : null,
+      a.projected_record ? stat("Projected", a.projected_record) : null
+    ),
+    items.length ? h("ul", { class: "plain todo-list" }, items) : h("p", { class: "good" }, "Nothing to do.")
+  );
+}
+
+// Turns the first occurrence of the player's name in a line into his link.
+function textWithLink(text, pid) {
+  const card = currentView && currentView.player_cards && currentView.player_cards[pid];
+  if (!card) return text;
+  const at = text.indexOf(card.name);
+  if (at < 0) return text;
+  return [text.slice(0, at), playerLink(card.name, pid), text.slice(at + card.name.length)];
+}
+
+// Player card
+
+const SPLIT_LABELS = { season: "Season", last30: "Last 30 days", last15: "Last 15 days", last7: "Last 7 days", projected: "ESPN projection", prev_season: "Last season" };
+let lastFocus = null;
+
+function closePlayer() {
+  const open = document.querySelector(".drawer-backdrop");
+  if (open) open.remove();
+  document.body.classList.remove("drawer-open");
+  if (lastFocus) { lastFocus.focus(); lastFocus = null; }
+}
+
+function sparkline(values) {
+  const NS = "http://www.w3.org/2000/svg";
+  const w = 240, ht = 44, pad = 4;
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", `0 0 ${w} ${ht}`);
+  svg.setAttribute("class", "spark");
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", "Minutes, oldest to newest: " + values.join(", "));
+  if (!values.length) return svg;
+  const max = Math.max(...values, 1);
+  const step = values.length > 1 ? (w - 2 * pad) / (values.length - 1) : 0;
+  const pts = values.map((v, i) => [pad + i * step, ht - pad - (v / max) * (ht - 2 * pad)]);
+  const line = document.createElementNS(NS, "polyline");
+  line.setAttribute("points", pts.map((p) => p.join(",")).join(" "));
+  svg.append(line);
+  pts.forEach(([x, y], i) => {
+    const dot = document.createElementNS(NS, "circle");
+    dot.setAttribute("cx", x); dot.setAttribute("cy", y); dot.setAttribute("r", i === pts.length - 1 ? 3 : 2);
+    svg.append(dot);
+  });
+  return svg;
+}
+
+function openPlayer(pid) {
+  const c = currentView && currentView.player_cards && currentView.player_cards[pid];
+  if (!c) return;
+  closePlayer();
+  lastFocus = document.activeElement;
+  const close = h("button", { type: "button", class: "drawer-close", "aria-label": "Close" }, "×");
+  close.addEventListener("click", closePlayer);
+  const hurt = c.injury_status && !["ACTIVE", "NORMAL"].includes(c.injury_status);
+  const val = (key) => (c.values[key] ? c.values[key] : null);
+  const season = val("season") || val("projected");
+  const recent = val("last15");
+  const fmtPct = (x) => (x === null || x === undefined ? "-" : pct(x));
+  const splitRows = Object.entries(c.splits).filter(([, l]) => l).map(([key, l]) => ({
+    cells: [SPLIT_LABELS[key] || key, l.gp, num(l.min), num(l.pts), num(l.reb), num(l.ast), num(l.tpm), num(l.stl), num(l.blk), num(l.to), fmtPct(l.fg_pct), fmtPct(l.ft_pct)],
+  }));
+  const gameRows = c.games.map((g) => ({
+    cells: [g.day, g.vs + (g.started ? "" : " (b)"), num(g.min, 0), num(g.pts, 0), num(g.reb, 0), num(g.ast, 0), num(g.tpm, 0), num(g.stl, 0), num(g.blk, 0), num(g.to, 0), `${num(g.fgm, 0)}-${num(g.fga, 0)}`, `${num(g.ftm, 0)}-${num(g.fta, 0)}`],
+  }));
+  const canTry = currentView.what_if && currentView.what_if.adds.some((p) => String(p.id) === String(pid));
+  const tryBtn = canTry ? h("button", { type: "button", class: "primary" }, "Try in What if") : null;
+  if (tryBtn) tryBtn.addEventListener("click", () => tryPickup(Number(pid)));
+  const drawer = h("aside", { class: "drawer", role: "dialog", "aria-modal": "true", "aria-label": c.name },
+    h("header", { class: "drawer-head" },
+      h("div", {},
+        h("div", { class: "drawer-kicker" }, [c.positions, c.pro_team, c.owner].filter(Boolean).join(" · ")),
+        h("h2", {}, c.name)),
+      close),
+    hurt ? h("p", { class: "drawer-injury" }, tag(c.health, "bad"), " ", c.injury_note || "", c.expected_return ? ` Back ~${c.expected_return}.` : "") : null,
+    stats(
+      season ? stat("Value, season", signed(season.value, 2)) : null,
+      recent ? stat("Last 15 days", signed(recent.value, 2)) : null,
+      season ? stat("Rank", "#" + season.rank) : null,
+      c.roster_pct !== null ? stat("Rostered", Math.round(c.roster_pct) + "%") : null
+    ),
+    c.games.length ? [h("h3", {}, "Minutes, last " + c.games.length + " games"), sparkline(c.games.map((g) => g.min).reverse())] : null,
+    h("h3", {}, "This week"),
+    c.week.length ? h("div", { class: "chips" }, c.week.map((g) => h("span", { class: "chip" }, `${g.day} ${g.vs}`))) : h("p", { class: "muted" }, "No games left this matchup."),
+    splitRows.length ? [h("h3", {}, "Per game"), table(["Period", "G", "MIN", "PTS", "REB", "AST", "3PM", "STL", "BLK", "TO", "FG%", "FT%"], splitRows, { textCols: [0] })] : null,
+    gameRows.length ? [h("h3", {}, "Recent games"), table(["Day", "Opp", "MIN", "PTS", "REB", "AST", "3PM", "STL", "BLK", "TO", "FG", "FT"], gameRows, { textCols: [0, 1] }), h("p", { class: "note" }, "(b) came off the bench.")] : null,
+    tryBtn ? h("div", { class: "actions" }, tryBtn) : null
+  );
+  const backdrop = h("div", { class: "drawer-backdrop" }, drawer);
+  backdrop.addEventListener("click", (e) => { if (e.target === backdrop) closePlayer(); });
+  document.body.append(backdrop);
+  document.body.classList.add("drawer-open");
+  close.focus();
+}
+
+document.addEventListener("click", (e) => {
+  const link = e.target.closest && e.target.closest(".plink");
+  if (link) openPlayer(link.dataset.pid);
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closePlayer(); });
 
 const WEEK_KINDS = {
   start: "Starts",
@@ -307,7 +471,7 @@ function renderWeekGrid(v) {
     h("th", { class: "text" }, "Player"), h("th", {}, "G"), h("th", {}, "Starts"),
     g.days.map((d) => h("th", { class: "wk-day" + (d.past ? " past" : ""), title: `${d.nba_games} NBA games` }, d.label.split(" ")[0], h("br"), h("small", {}, d.label.split(" ")[1]))));
   const tbody = h("tbody", {}, g.players.map((p) => h("tr", { class: p.ir ? "ir" : null },
-    h("td", { class: "text strong" }, p.name, h("small", { class: "muted" }, " " + p.positions + (p.ir ? " · IR" : ""))),
+    h("td", { class: "text strong" }, playerLink(p.name, p.id), h("small", { class: "muted" }, " " + p.positions + (p.ir ? " · IR" : ""))),
     h("td", {}, String(p.games)),
     h("td", {}, String(p.starts)),
     g.days.map((d) => {
@@ -341,13 +505,14 @@ function renderGameCounts(v) {
   return card(
     "Games this week",
     true,
-    h("p", { class: "note" }, "Played so far plus the games left that fit a starting slot, each weighted by the chance the player plays: DTD 70% today and tomorrow and 85% after, questionable 50%, doubtful 20%, OUT 0 until his expected return."),
+    h("p", { class: "note" }, "Played so far plus the games left that fit a starting slot, each weighted by the chance the player plays: DTD 70% today and tomorrow and 85% after, questionable 50%, doubtful 20%, OUT 0 until his expected return. Streams: games other teams are expected to add with pickups, from their acquisitions left and how many they usually use (you: none, that's your call)."),
     table(
-      ["Team", "Opponent", "Played", "Left", "Expected", "Total", "Edge", "Lost to OUT", "Uncertain", "No slot"],
+      ["Team", "Opponent", "Played", "Left", "Expected", "Streams", "Total", "Edge", "Lost to OUT", "Uncertain", "No slot"],
       rows.map((r, i) => ({
         cls: r.is_me ? "mine" : i % 2 === 1 ? "pair-end" : null,
         cells: [
           { node: r.team, cls: "strong" }, r.opponent || "-", r.played, r.usable_remaining, num(r.expected_remaining),
+          r.stream_games ? "+" + num(r.stream_games) : "-",
           { node: num(r.expected_total), cls: "strong" },
           { node: signed(r.edge), cls: r.edge >= 1 ? "good" : r.edge <= -1 ? "bad" : "" },
           { node: r.out_games, cls: r.out_games ? "bad" : "" },
@@ -534,7 +699,7 @@ function renderAdvanced(v) {
     const c = a.consistency || {};
     return {
       cells: [
-        r.name, pct(a.ts_pct), pct(a.efg_pct), pct(a.tp_pct), num(a.tpa), num(a.ast_to, 2), num(a.oreb), num(a.dreb),
+        { node: playerLink(r.name, r.id) }, pct(a.ts_pct), pct(a.efg_pct), pct(a.tp_pct), num(a.tpa), num(a.ast_to, 2), num(a.oreb), num(a.dreb),
         num(a.stocks), a.dd_rate === null ? "-" : Math.round(a.dd_rate * 100) + "%",
         a.per36 ? num(a.per36.pts) : "-", num(r.usage_proxy),
         valueCell(c.mean), c.sd === undefined ? "-" : num(c.sd, 2), valueCell(c.floor), valueCell(c.ceiling),
@@ -630,7 +795,7 @@ function renderAlerts(v) {
     false,
     h("ul", { class: "plain" }, v.alerts.slice(0, 40).map((a) =>
       h("li", {},
-        tag(a.trend, cls[a.trend]), h("strong", {}, a.name), ` ${a.pro_team} · `, h("span", { class: "muted" }, a.owner),
+        tag(a.trend, cls[a.trend]), h("strong", {}, playerLink(a.name, a.player_id)), ` ${a.pro_team} · `, h("span", { class: "muted" }, a.owner),
         h("ul", { class: "alert-lines" }, a.lines.map((l) => h("li", {}, l)))
       )))
   );
@@ -641,7 +806,7 @@ function rosterRows(roster, withUsable) {
     const [line, mark] = statLine(r);
     return {
       cells: [
-        r.name + mark, r.pro_team, r.positions, r.slot || "-", healthCell(r), r.gp,
+        { node: [playerLink(r.name, r.id), mark] }, r.pro_team, r.positions, r.slot || "-", healthCell(r), r.gp,
         num(line && line.min), minutes(r.last5_min), trendCell(r.trend), ...statCells(line),
         num(r.roster_pct), r.games_remaining, withUsable ? (r.usable_remaining ?? "-") : null,
       ].filter((x) => x !== null),
@@ -691,9 +856,10 @@ function renderFreeAgents(v) {
     const status = r.pool_status === "WAIVERS" ? "WA" : "FA";
     return {
       cells: [
-        i + 1, r.name + mark, r.pro_team, r.positions, status, healthCell(r), num(r.roster_pct), signed(r.roster_pct_change),
+        i + 1, { node: [playerLink(r.name, r.id), mark] }, r.pro_team, r.positions, status, healthCell(r), num(r.roster_pct), signed(r.roster_pct_change),
         num(r.projected_min), minutes(r.last5_min), `${r.last5_starts}/${r.last5_min.length}`, trendCell(r.trend),
         ...statCells(line), `${r.usable_remaining}/${r.games_remaining}`, r.reasons.join("; "),
+        { node: tryButton(r.id) },
       ],
     };
   });
@@ -701,7 +867,7 @@ function renderFreeAgents(v) {
     "Free agents",
     true,
     h("p", { class: "note" }, "Sorted by how interesting they are right now (minutes, role, schedule, adds), not by ESPN rank. * = ESPN projection."),
-    table(["#", "Player", "Team", "Pos", "St", "Health", "Ros%", "+/-", "Proj MIN", "Last 5 MIN", "Starts", "Trend", "FG%", "FT%", ...STATS.map(([l]) => l), "Usable", "Why"], rows, { textCols: [1, 2, 3, 4, 5, 22], wrapCols: [22] })
+    table(["#", "Player", "Team", "Pos", "St", "Health", "Ros%", "+/-", "Proj MIN", "Last 5 MIN", "Starts", "Trend", "FG%", "FT%", ...STATS.map(([l]) => l), "Usable", "Why", ""], rows, { textCols: [1, 2, 3, 4, 5, 22], wrapCols: [22] })
   );
 }
 
@@ -726,7 +892,7 @@ function renderPickups(v) {
         const l = a.recent || {};
         return {
           cells: [
-            { node: [a.name, health(a.health) ? " " : null, health(a.health) ? tag(health(a.health), "warn") : null, a.still_rostered ? null : h("small", { class: "muted" }, " dropped since")], cls: "strong" },
+            { node: [playerLink(a.name, a.id), health(a.health) ? " " : null, health(a.health) ? tag(health(a.health), "warn") : null, a.still_rostered ? null : h("small", { class: "muted" }, " dropped since")], cls: "strong" },
             a.positions || "-", a.pro_team || "-", num(l.min), num(l.pts), num(l.tpm), num(l.reb), num(l.ast), num(l.stl), num(l.blk),
             valueCell(a.value), a.games_left ?? "-", a.source,
           ],
@@ -861,7 +1027,7 @@ function renderRankings(view) {
       cls: row.owner_short === "ME" ? "mine" : null,
       cells: [
         row.live_round, row.live_rank, valueCell(row.punt_value), valueCell(row.league_value),
-        row.name, row.pro_team, row.positions, row.owner_short, row.injury || "-", row.gp,
+        { node: playerLink(row.name, row.id) }, row.pro_team, row.positions, row.owner_short, row.injury || "-", row.gp,
         num(row.min), num(row.pts), num(row.tpm), num(row.reb), num(row.ast), num(row.stl), num(row.blk),
         pct(row.fg_pct), num(row.fga), pct(row.ft_pct), num(row.fta), num(row.to), num(row.usage_proxy),
         ...cats.map((c) => valueCell(row.values[c])),
@@ -1016,12 +1182,13 @@ function render(view, demo) {
     $("download").disabled = true;
     return;
   }
+  currentView = view;
   renderMasthead(view);
   const c = view.lineup;
-  const fixes = c ? c.swaps.length + c.bench.length + c.ir.length : 0;
+  const fixes = view.actions ? view.actions.todo_count : c ? c.swaps.length + c.bench.length + c.ir.length : 0;
   // Some panels are absent (no matchup, no season totals yet): skip them.
   const sections = {
-    today: [renderScoreboard(view), renderLineup(view), renderChanges(view), renderAlerts(view), renderAcquisitions(view), renderPickups(view)],
+    today: [renderActions(view), renderScoreboard(view), renderLineup(view), renderChanges(view), renderAlerts(view), renderAcquisitions(view), renderPickups(view)],
     matchup: [renderMatchup(view), renderTargets(view), renderWhatIf(view), renderGameCounts(view), renderWeekGrid(view), renderStrategy(view), renderAccuracy(view), renderSchedule(view), renderStreamPlan(view), renderSimulator(view), renderNextMatchup(view)],
     roster: [renderMyRoster(view), renderAdvanced(view)],
     wire: [renderPickups(view), renderFreeAgents(view), renderTransactions(view), renderPopular(view)],
