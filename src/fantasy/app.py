@@ -9,7 +9,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from fantasy.analysis.accuracy import forecast_accuracy
+from fantasy.analysis.accuracy import forecast_accuracy, win_chance_trend
 from fantasy.analysis.context import Context
 from fantasy.analysis.trade import TradeError, evaluate_trade
 from fantasy.analysis.view import build_view
@@ -110,9 +110,12 @@ class FantasyApp:
             self.config.tz,
             punt=self.config.punt,
         )
-        view["accuracy"] = forecast_accuracy(
-            *self.store.forecast_history(snapshot.league.id, snapshot.league.season)
-        )
+        forecasts, results = self.store.forecast_history(snapshot.league.id, snapshot.league.season)
+        view["accuracy"] = forecast_accuracy(forecasts, results)
+        if view.get("matchup"):
+            view["trend"] = win_chance_trend(
+                forecasts, view["matchup"]["period"], self.config.tz, _my_moves(snapshot)
+            )
         self._cache = (key, view)
         return view
 
@@ -202,3 +205,22 @@ class FantasyApp:
     def report(self, compact: bool = False) -> str | None:
         view = self.view()
         return render_report(view, compact=compact) if view else None
+
+
+def _my_moves(snapshot: Snapshot) -> list[dict]:
+    """My adds and drops in the current matchup, for the trend chart."""
+    sps = set(snapshot.league.matchup_periods.get(snapshot.league.matchup_period) or [])
+    moves = []
+    for t in snapshot.transactions:
+        if t.team_id != snapshot.my_team_id or not t.ts or (sps and t.sp not in sps):
+            continue
+        if t.status != "EXECUTED":
+            continue
+        parts = [
+            f"{'+' if i.type == 'ADD' else '-'}{snapshot.player_name(i.player_id)}"
+            for i in t.items
+            if i.type in ("ADD", "DROP")
+        ]
+        if parts:
+            moves.append({"at": t.ts, "text": " ".join(parts)})
+    return sorted(moves, key=lambda m: m["at"])

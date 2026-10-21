@@ -121,3 +121,51 @@ def _kind(
         return "missed"
     player = ctx.snap.players[pid]
     return "out" if player.injury_status in UNAVAILABLE_STATUSES else "bench"
+
+
+IDEAS_PER_DAY = 2
+MIN_IDEA_GAIN = 0.05
+
+
+def add_pickup_ideas(ctx: Context, grid: dict, whatif: dict | None) -> None:
+    """For each day ahead with an open slot: the free agents who play that
+    day and help the matchup most (best drop for each), from the what-if."""
+    if not whatif:
+        return
+    base = whatif["base"]["expected_wins"]
+    drops = [d["id"] for d in whatif["drops"]]
+    best: dict[int, tuple[float, float, int]] = {}
+    for add in whatif["adds"]:
+        scored = [
+            (row[1] - base, row[0], drop)
+            for drop in drops
+            if (row := whatif["results"].get(f"{add['id']}:{drop}"))
+        ]
+        if scored:
+            best[add["id"]] = max(scored)
+    names = {a["id"]: a for a in whatif["adds"]}
+    for day in grid["days"]:
+        day["ideas"] = []
+        if day["past"] or not day["open_slots"]:
+            continue
+        playing = []
+        for pid, (gain, p_after, drop) in best.items():
+            player = ctx.snap.players.get(pid)
+            if gain < MIN_IDEA_GAIN or player is None or not player.pro_team_id:
+                continue
+            games = ctx.calendar.team_games(player.pro_team_id, ctx.sps)
+            if any(g.sp == day["sp"] for g in games):
+                left = sum(1 for g in games if g.sp >= day["sp"])
+                playing.append((gain, pid, p_after, drop, left))
+        for gain, pid, p_after, drop, left in sorted(playing, reverse=True)[:IDEAS_PER_DAY]:
+            day["ideas"].append(
+                {
+                    "id": pid,
+                    "name": names[pid]["name"],
+                    "team": names[pid]["team"],
+                    "gain": round(gain, 2),
+                    "p_win_after": p_after,
+                    "drop": ctx.snap.player_name(drop),
+                    "games_from_day": left,
+                }
+            )

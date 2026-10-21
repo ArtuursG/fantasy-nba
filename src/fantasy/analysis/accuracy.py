@@ -10,6 +10,8 @@ snapshot of each matchup week, the hardest test.
 
 from __future__ import annotations
 
+from datetime import datetime, tzinfo
+
 OUTCOME = {"WIN": 1.0, "LOSS": 0.0, "TIE": 0.5}
 BUCKETS = [(0.5, 0.6), (0.6, 0.7), (0.7, 0.8), (0.8, 0.9), (0.9, 1.01)]
 
@@ -69,3 +71,30 @@ def forecast_accuracy(
         ),
         "calibration": calibration,
     }
+
+
+def win_chance_trend(
+    forecasts: list[tuple[str, int, str, float]],
+    period: int,
+    tz: tzinfo,
+    moves: list[dict] | None = None,
+) -> dict | None:
+    """The matchup win chance at each refresh of this matchup, oldest first,
+    with my own roster moves to show what changed it."""
+    points: dict[str, dict] = {}
+    for fetched_at, item_period, cat, p in forecasts:
+        if item_period != period:
+            continue
+        point = points.setdefault(fetched_at, {"at": fetched_at, "p": None, "expected": 0.0})
+        if cat == "*":
+            point["p"] = round(p, 3)
+        else:
+            point["expected"] += p
+    rows = [pt for pt in points.values() if pt["p"] is not None]
+    if not rows:
+        return None
+    for pt in rows:
+        local = datetime.fromisoformat(pt["at"]).astimezone(tz)
+        pt["label"] = local.strftime("%a %H:%M")
+        pt["expected"] = round(pt["expected"], 2)
+    return {"points": rows, "moves": moves or []}

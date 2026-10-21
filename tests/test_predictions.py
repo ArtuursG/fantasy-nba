@@ -349,3 +349,20 @@ def test_back_to_back_rest_marks_only_top_players(today):
             assert ctx.values[pid] >= cutoff
             assert ctx.calendar.back_to_back(snap.players[pid].pro_team_id, plan.date)
             assert plan.chance[pid] < 1.0
+
+
+def test_pickup_ideas_only_on_open_days_and_for_players_who_play(view, today):
+    from fantasy.analysis.context import Context as Ctx
+
+    ctx = Ctx.build(today)
+    grid = view["week_grid"]
+    adds = {a["id"] for a in view["what_if"]["adds"]}
+    for day in grid["days"]:
+        if day["past"] or not day["open_slots"]:
+            assert day["ideas"] == []
+        for idea in day["ideas"]:
+            assert idea["id"] in adds and idea["gain"] > 0
+            player = today.players[idea["id"]]
+            games = ctx.calendar.team_games(player.pro_team_id, ctx.sps)
+            assert any(g.sp == day["sp"] for g in games)
+    assert any(day["ideas"] for day in grid["days"])

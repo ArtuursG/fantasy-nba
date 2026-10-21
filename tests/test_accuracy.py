@@ -36,3 +36,22 @@ def test_results_of_finished_matchups_are_recorded(tmp_path, today):
     assert results[(4, "*")] in ("WIN", "LOSS", "TIE")
     assert all(period == 4 for period, _ in results)
     assert forecast_accuracy(forecasts, results)["forecasts"] == 1
+
+
+def test_win_chance_trend_follows_the_current_matchup():
+    from datetime import UTC
+
+    from fantasy.analysis.accuracy import win_chance_trend
+
+    forecasts = [
+        ("2026-10-20T08:00:00+00:00", 1, "PTS", 0.6),
+        ("2026-10-20T08:00:00+00:00", 1, "*", 0.55),
+        ("2026-10-21T08:00:00+00:00", 1, "PTS", 0.7),
+        ("2026-10-21T08:00:00+00:00", 1, "*", 0.62),
+        ("2026-10-28T08:00:00+00:00", 2, "*", 0.4),
+    ]
+    trend = win_chance_trend(forecasts, 1, UTC, [{"at": "2026-10-20T12:00:00+00:00", "text": "+X"}])
+    assert [p["p"] for p in trend["points"]] == [0.55, 0.62]
+    assert trend["points"][1]["expected"] == 0.7 and trend["points"][0]["label"] == "Tue 08:00"
+    assert trend["moves"][0]["text"] == "+X"
+    assert win_chance_trend(forecasts, 3, UTC) is None

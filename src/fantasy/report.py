@@ -343,6 +343,18 @@ class Report:
             ),
             "NBA games: " + ", ".join(f"{d['label']} {d['nba_games']}" for d in days),
         )
+        ideas = [d for d in days if d.get("ideas")]
+        if ideas:
+            self.add("", "Pickup ideas by open-slot day (expected categories added, best drop):")
+            for d in ideas:
+                self.add(
+                    f"- {d['label']}: "
+                    + "; ".join(
+                        f"{i['name']} ({i['team']}) +{i['gain']:.2f}, drop {i['drop']}, "
+                        f"{i['games_from_day']} games from that day"
+                        for i in d["ideas"]
+                    )
+                )
 
     def header(self) -> None:
         m = self.meta
@@ -600,6 +612,21 @@ class Report:
             f"{games['opp']['scheduled_remaining']} / {games['opp']['usable_remaining']} / "
             f"{games['opp']['expected_remaining']:.1f}",
         )
+        trend = self.view.get("trend")
+        if trend and len(trend["points"]) > 1:
+            shown = trend["points"][-8:]
+            self.add(
+                "Win chance through the week: "
+                + " -> ".join(f"{p['label']} {p['p'] * 100:.0f}%" for p in shown)
+            )
+            if trend["moves"]:
+                self.add(
+                    "My moves this matchup: "
+                    + "; ".join(
+                        f"{short_time(m['at'], self.meta['timezone'])} {m['text']}"
+                        for m in trend["moves"]
+                    )
+                )
         outlook = mu["outlook"]
         at_least = {int(k): v for k, v in outlook["p_at_least"].items()}
         n = outlook["categories"]

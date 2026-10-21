@@ -41,7 +41,7 @@ from fantasy.analysis.stats import REVERSE_CATS, average, usage_proxy
 from fantasy.analysis.strategy import category_strategy, next_matchup
 from fantasy.analysis.streaming import Streaming, apply_streaming, expected_streaming
 from fantasy.analysis.trade import trade_targets
-from fantasy.analysis.weekgrid import week_grid
+from fantasy.analysis.weekgrid import add_pickup_ideas, week_grid
 from fantasy.espn.constants import (
     BENCH_SLOT,
     C_SLOT,
@@ -499,10 +499,13 @@ def build_view(
     changes = compare(ctx, prev)
     alert_ids = [r["player_id"] for r in top_fa]
 
+    grid = week_grid(ctx, me, snap.team(opp_id) if opp_id else None) if me else None
+    if grid is not None:
+        add_pickup_ideas(ctx, grid, whatif)
     view = {
         "game_counts": league_game_counts(ctx, add_streaming),
         "what_if": whatif,
-        "week_grid": week_grid(ctx, me, snap.team(opp_id) if opp_id else None) if me else None,
+        "week_grid": grid,
         "meta": {
             "date": ctx.now.astimezone(tz).date().isoformat(),
             "fetched_at": ctx.now.astimezone(tz).strftime("%Y-%m-%d %H:%M"),

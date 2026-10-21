@@ -217,6 +217,57 @@ function renderMatchup(v) {
   );
 }
 
+function renderTrend(v) {
+  const t = v.trend;
+  if (!t || !t.points.length) return null;
+  const NS = "http://www.w3.org/2000/svg";
+  const W = 640, H = 200, L = 40, R = 12, T = 12, B = 28;
+  const times = t.points.map((p) => Date.parse(p.at));
+  const t0 = Math.min(...times), t1 = Math.max(...times);
+  const span = Math.max(t1 - t0, 1);
+  const x = (ms) => (t.points.length === 1 ? L + (W - L - R) / 2 : L + ((ms - t0) / span) * (W - L - R));
+  const y = (p) => T + (1 - p) * (H - T - B);
+  const el = (tag, attrs, text) => {
+    const e = document.createElementNS(NS, tag);
+    Object.entries(attrs).forEach(([k, val]) => e.setAttribute(k, val));
+    if (text !== undefined) e.textContent = text;
+    return e;
+  };
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, class: "trend", role: "img", "aria-label": "Matchup win chance at each refresh: " + t.points.map((p) => `${p.label} ${percent(p.p)}`).join(", ") });
+  [0, 0.5, 1].forEach((g) => {
+    svg.append(el("line", { x1: L, x2: W - R, y1: y(g), y2: y(g), class: g === 0.5 ? "mid" : "grid" }));
+    svg.append(el("text", { x: L - 6, y: y(g) + 4, class: "axis", "text-anchor": "end" }, Math.round(g * 100) + "%"));
+  });
+  t.moves.forEach((m) => {
+    const ms = Date.parse(m.at);
+    if (ms < t0 || ms > t1) return;
+    const line = el("line", { x1: x(ms), x2: x(ms), y1: T, y2: H - B, class: "move" });
+    line.append(el("title", {}, m.text));
+    svg.append(line);
+  });
+  svg.append(el("polyline", { points: t.points.map((p, i) => `${x(times[i])},${y(p.p)}`).join(" "), class: "line" }));
+  t.points.forEach((p, i) => {
+    const dot = el("circle", { cx: x(times[i]), cy: y(p.p), r: i === t.points.length - 1 ? 4 : 2.5, class: "dot" });
+    dot.append(el("title", {}, `${p.label}: ${percent(p.p)}, ${p.expected.toFixed(1)} expected categories`));
+    svg.append(dot);
+  });
+  const first = t.points[0], last = t.points[t.points.length - 1];
+  svg.append(el("text", { x: L, y: H - 8, class: "axis" }, first.label));
+  if (t.points.length > 1) svg.append(el("text", { x: W - R, y: H - 8, class: "axis", "text-anchor": "end" }, last.label));
+  const change = Math.round(last.p * 100) - Math.round(first.p * 100);
+  return card(
+    "Win chance this week",
+    false,
+    stats(
+      stat("Now", percent(last.p)),
+      stat("Since first refresh", (change > 0 ? "+" : "") + change + " pts", change > 0 ? "good" : change < 0 ? "bad" : ""),
+      stat("Refreshes", String(t.points.length))
+    ),
+    svg,
+    h("p", { class: "note" }, t.moves.length ? "Orange lines mark your adds and drops (hover for who)." : "Your adds and drops will show as orange lines.")
+  );
+}
+
 function renderTargets(v) {
   const mu = v.matchup;
   if (!mu || !mu.targets || !mu.targets.length) return null;
@@ -486,14 +537,18 @@ function renderWeekGrid(v) {
     foot("My starts", g.days.map((d) => d.starts)),
     foot("Opponent starts", g.days.map((d) => d.opp_starts)),
     foot("My open slots", g.days.map((d) => d.open_slots), (d) => (d.open_slots ? "wk-open" : null)),
-    foot("NBA games", g.days.map((d) => d.nba_games), (d) => (d.nba_games <= 5 ? "warn" : d.nba_games >= 10 ? "good" : null))
+    foot("NBA games", g.days.map((d) => d.nba_games), (d) => (d.nba_games <= 5 ? "warn" : d.nba_games >= 10 ? "good" : null)),
+    g.days.some((d) => d.ideas && d.ideas.length)
+      ? h("tr", { class: "wk-foot wk-ideas" }, h("td", { class: "text", colspan: 3 }, "Pickup ideas"),
+          g.days.map((d) => h("td", {}, (d.ideas || []).map((i) => h("div", { class: "idea", title: `drop ${i.drop}; ${i.games_from_day} games from this day; win chance after ${percent(i.p_win_after)}` }, playerLink(i.name, i.id), h("small", { class: "good" }, " +" + i.gain.toFixed(1)))))))
+      : null
   );
   return card(
     "The week, day by day",
     true,
     h("div", { class: "chips" }, Object.entries(WEEK_KINDS).map(([k, label]) => h("span", { class: "chip wk-key wk-" + k }, label))),
     h("div", { class: "scroll" }, h("table", { class: "week" }, h("thead", {}, head), tbody, tfoot)),
-    h("p", { class: "note" }, "A day with open slots is a day a pickup adds games; a day with few NBA games is when streamers are easiest to fit, and many games means your bench gets squeezed. Cells show the opponent, @ for away.")
+    h("p", { class: "note" }, "Pickup ideas: free agents who play that day and add the most expected categories (with the best drop; hover for details). A day with open slots is a day a pickup adds games; a day with few NBA games is when streamers are easiest to fit, and many games means your bench gets squeezed. Cells show the opponent, @ for away.")
   );
 }
 
@@ -1190,7 +1245,7 @@ function render(view, demo) {
   // Some panels are absent (no matchup, no season totals yet): skip them.
   const sections = {
     today: [renderActions(view), renderScoreboard(view), renderLineup(view), renderChanges(view), renderAlerts(view), renderAcquisitions(view), renderPickups(view)],
-    matchup: [renderMatchup(view), renderTargets(view), renderWhatIf(view), renderGameCounts(view), renderWeekGrid(view), renderStrategy(view), renderAccuracy(view), renderSchedule(view), renderStreamPlan(view), renderSimulator(view), renderNextMatchup(view)],
+    matchup: [renderMatchup(view), renderTrend(view), renderTargets(view), renderWhatIf(view), renderGameCounts(view), renderWeekGrid(view), renderStrategy(view), renderAccuracy(view), renderSchedule(view), renderStreamPlan(view), renderSimulator(view), renderNextMatchup(view)],
     roster: [renderMyRoster(view), renderAdvanced(view)],
     wire: [renderPickups(view), renderFreeAgents(view), renderTransactions(view), renderPopular(view)],
     league: [renderStrength(view), renderSeason(view), renderTrade(view), renderTeams(view)],
