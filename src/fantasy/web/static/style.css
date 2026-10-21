@@ -620,3 +620,8 @@ td.day-win { background: color-mix(in srgb, var(--win) 18%, transparent); }
 td.day-loss { background: color-mix(in srgb, var(--loss) 14%, transparent); }
 tr.day-games td { color: var(--muted); font-size: 12px; }
 tr.day-score td { font-weight: 600; border-top: 2px solid var(--ink); }
+
+.report-text.short { min-height: 320px; margin-top: 8px; }
+.ask-row { padding: 4px 0 10px; }
+button.ask { border-color: var(--spot); color: var(--spot); }
+button.ask:hover:not(:disabled) { background: var(--spot); color: var(--spot-ink); border-color: var(--spot); }

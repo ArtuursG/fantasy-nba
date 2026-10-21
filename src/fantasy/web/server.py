@@ -74,8 +74,10 @@ def make_handler(app: FantasyApp, allowed_hosts: set[str]) -> type[BaseHTTPReque
             elif path == "/api/settings":
                 self._json(200, app.settings())
             elif path == "/api/report":
-                compact = parse_qs(url.query).get("compact") == ["1"]
-                text = app.report(compact=compact)
+                query = parse_qs(url.query)
+                text = app.report(
+                    compact=query.get("compact") == ["1"], brief=query.get("kind") == ["brief"]
+                )
                 if text is None:
                     self._json(404, {"error": "No snapshot yet: press Refresh first."})
                 else:

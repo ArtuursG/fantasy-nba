@@ -1329,6 +1329,55 @@ function renderSettings() {
   );
 }
 
+// Ready questions for ChatGPT: each copies the question plus the brief.
+const INTRO = "Esmu ESPN fantasy basketbola H2H kategoriju līgā. Zemāk ir mana šodienas īsā atskaite no manas analītikas lapas.";
+const PROMPTS = [
+  ["Mačupa plāns", "Analizē manu pašreizējo mačupu: kuras kategorijas vēl var uzvarēt, kuras labāk atdot, un kādi konkrēti gājieni (sastāvs, pacēlumi, atlaišanas) visvairāk palielinās uzvaras iespēju. Atbildi īsi, ar konkrētiem spēlētāju vārdiem."],
+  ["Ko pacelt", "Kurus brīvos spēlētājus pacelt šonedēļ un kurus atlaist? Ņem vērā spēļu skaitu pa dienām, brīvos slotus, manas vājās kategorijas un atlikušās pievienošanas."],
+  ["Sastāvs šovakar", "Pārbaudi manu šodienas sastāvu un traumas: vai kaut kas jāmaina pirms spēles sākuma? Ja viss kārtībā, saki to vienā teikumā."],
+  ["Treidi", "Novērtē treidu idejas atskaitē un iesaki 1–2 treidus, ko piedāvāt, ar īsu argumentu, kāpēc tas ir izdevīgs arī otrai komandai."],
+  ["Sezonas stratēģija", "Kāda ir laba ilgtermiņa stratēģija manai komandai: vai puntēt kādu kategoriju, kurus spēlētājus turēt vai mainīt, un kā sagatavoties playoff nedēļām?"],
+];
+let briefText = "";
+
+async function askChatGPT(question) {
+  if (!briefText) return;
+  const text = `${INTRO}\n\n${question}\n\n${briefText}`;
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const area = h("textarea", { style: "position:fixed;left:-9999px;top:0", readonly: true });
+    area.value = text;
+    document.body.append(area);
+    area.select();
+    document.execCommand("copy");
+    area.remove();
+  }
+  setStatus("Question and brief copied: paste them into ChatGPT (it opens in a new tab).", "ok");
+  window.open("https://chatgpt.com/", "_blank", "noopener");
+}
+
+function renderAsk() {
+  const buttons = PROMPTS.map(([label, question]) => {
+    const b = h("button", { type: "button", class: "ask" }, label);
+    b.addEventListener("click", () => askChatGPT(question));
+    return b;
+  });
+  const area = h("textarea", { id: "brief-text", class: "report-text short", readonly: true, spellcheck: "false", "aria-label": "Brief report text" });
+  area.value = briefText;
+  return card(
+    "Ask ChatGPT",
+    true,
+    h("p", { class: "note" }, "Each button copies a ready question together with the short report (only what today's decisions need) and opens ChatGPT: paste and send. The full report below is for a deeper look."),
+    h("div", { class: "actions ask-row" }, buttons),
+    h("details", {}, h("summary", { id: "brief-size" }, briefSize()), area)
+  );
+}
+
+function briefSize() {
+  return briefText ? `Short report: ${briefText.length.toLocaleString()} characters (show)` : "Short report: loading...";
+}
+
 function renderReport() {
   const area = h("textarea", { id: "report-text", class: "report-text", readonly: true, spellcheck: "false", "aria-label": "Daily report text" });
   area.value = reportText;
@@ -1433,7 +1482,7 @@ function render(view, demo) {
     wire: [renderPickups(view), renderHot(view), renderFreeAgents(view), renderTransactions(view), renderPopular(view)],
     league: [renderSeasonOutlook(view), renderPunt(view), renderHabits(view), renderStrength(view), renderSeason(view), renderTrade(view), renderTeams(view)],
     rankings: [renderRankings(view)],
-    report: [renderReport()],
+    report: [renderAsk(), renderReport()],
     setup: STATIC ? [] : [renderSettings()],
   };
   renderTabs({ today: fixes });
@@ -1456,6 +1505,16 @@ async function loadReport() {
   if (area) area.value = reportText;
   const size = $("report-size");
   if (size) size.textContent = reportSize();
+  if (STATIC) {
+    briefText = STATIC.report.brief || "";
+  } else {
+    const res = await fetch("/api/report?kind=brief");
+    if (res.ok) briefText = await res.text();
+  }
+  const briefArea = $("brief-text");
+  if (briefArea) briefArea.value = briefText;
+  const briefLabel = $("brief-size");
+  if (briefLabel) briefLabel.textContent = briefSize();
   $("copy").disabled = false;
   $("download").disabled = false;
 }

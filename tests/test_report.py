@@ -98,3 +98,13 @@ def test_to_do_list_leads_the_report(view):
     section = text.split("## TO DO NOW")[1].split("\n## ")[0]
     assert "[LINEUP] Start " in section and "win chance" in section
     assert text.index("## TO DO NOW") < text.index("## LEAGUE RULES")
+
+
+def test_brief_is_short_and_keeps_the_decisions(view):
+    from fantasy.brief import render_brief
+
+    text = render_brief(view)
+    assert len(text) < 12000 < len(render_report(view, compact=True))
+    for heading in ("## TO DO NOW", "## MATCHUP", "## MY ROSTER", "## TOP FREE AGENTS"):
+        assert heading in text
+    assert view["my_team"]["roster"][0]["name"] in text

@@ -39,6 +39,7 @@ def build_parser() -> argparse.ArgumentParser:
         "report", parents=[common], help="Print the daily report from the latest snapshot"
     )
     report.add_argument("--compact", action="store_true", help="Leave out the other rosters")
+    report.add_argument("--brief", action="store_true", help="The short report for a chat prompt")
     report.add_argument("--out", type=Path, help="Write to this file instead of printing")
 
     check = sub.add_parser(
@@ -145,7 +146,7 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
             print(f"Dashboard written to {out}")
             return 0
-        text = app.report(compact=args.compact)
+        text = app.report(compact=args.compact, brief=getattr(args, "brief", False))
         if text is None:
             print("No snapshot yet: run `fantasy refresh` first.", file=sys.stderr)
             return 1

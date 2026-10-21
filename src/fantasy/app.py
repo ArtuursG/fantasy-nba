@@ -13,6 +13,7 @@ from fantasy.analysis.accuracy import first_forecast, forecast_accuracy, win_cha
 from fantasy.analysis.context import Context
 from fantasy.analysis.trade import TradeError, evaluate_trade
 from fantasy.analysis.view import build_view
+from fantasy.brief import render_brief
 from fantasy.config import (
     Config,
     ConfigError,
@@ -206,9 +207,11 @@ class FantasyApp:
             self._cache = None
         return self.settings()
 
-    def report(self, compact: bool = False) -> str | None:
+    def report(self, compact: bool = False, brief: bool = False) -> str | None:
         view = self.view()
-        return render_report(view, compact=compact) if view else None
+        if not view:
+            return None
+        return render_brief(view) if brief else render_report(view, compact=compact)
 
 
 def _my_moves(snapshot: Snapshot) -> list[dict]:

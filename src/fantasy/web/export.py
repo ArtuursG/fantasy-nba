@@ -35,7 +35,11 @@ def export_site(app: FantasyApp, out: Path) -> Path:
     data = {
         "view": view,
         "demo": app.demo,
-        "report": {"full": app.report(), "compact": app.report(compact=True)},
+        "report": {
+            "full": app.report(),
+            "compact": app.report(compact=True),
+            "brief": app.report(brief=True),
+        },
         "exported_at": datetime.now(UTC).isoformat(timespec="seconds"),
     }
     if out.exists():
