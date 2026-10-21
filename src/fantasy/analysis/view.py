@@ -37,6 +37,7 @@ from fantasy.analysis.schedule import (
 from fantasy.analysis.simulator import simulate_moves, what_if
 from fantasy.analysis.stats import REVERSE_CATS, average, usage_proxy
 from fantasy.analysis.strategy import category_strategy, next_matchup
+from fantasy.analysis.streaming import Streaming, apply_streaming, expected_streaming
 from fantasy.analysis.trade import trade_targets
 from fantasy.analysis.weekgrid import week_grid
 from fantasy.espn.constants import (
@@ -419,12 +420,25 @@ def build_view(
     whatif = None
     stream_plan = None
     strategy = None
+    candidates = [r["player_id"] for r in fa_ranked if r["games_remaining"] > 0]
+
+    def add_streaming(side: SideProjection) -> Streaming | None:
+        """Other teams' expected streaming goes into their projection."""
+        if side.team.id == snap.my_team_id:
+            return None
+        streaming = expected_streaming(
+            ctx, side, _acquisitions(ctx, side.team)["remaining"], candidates
+        )
+        apply_streaming(ctx, side, streaming, candidates)
+        return streaming
+
     if me is not None and opp_id is not None and snap.team(opp_id):
         my_side, opp_side = sides_for(ctx, me.id)
         mine: SideProjection = project_side(ctx, me, my_side)
         theirs = project_side(ctx, snap.team(opp_id), opp_side)  # type: ignore[arg-type]
+        opp_streaming = add_streaming(theirs)
         matchup = analyze_matchup(ctx, mine, theirs)
-        candidates = [r["player_id"] for r in fa_ranked if r["games_remaining"] > 0]
+        matchup["opp_streaming"] = opp_streaming.to_dict() if opp_streaming else None
         acquisitions_left = _acquisitions(ctx, me)["remaining"]
         moves = simulate_moves(ctx, mine, theirs, candidates, acquisitions_left)
         whatif = what_if(ctx, mine, theirs, candidates)
@@ -484,7 +498,7 @@ def build_view(
     alert_ids = [r["player_id"] for r in top_fa]
 
     return {
-        "game_counts": league_game_counts(ctx),
+        "game_counts": league_game_counts(ctx, add_streaming),
         "what_if": whatif,
         "week_grid": week_grid(ctx, me, snap.team(opp_id) if opp_id else None) if me else None,
         "meta": {

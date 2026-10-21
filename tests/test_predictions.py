@@ -215,7 +215,10 @@ def test_game_counts_cover_every_pairing_with_mine_first(view):
         assert a["edge"] == pytest.approx(-b["edge"])
     for r in rows:
         assert r["expected_remaining"] <= r["usable_remaining"] <= r["scheduled_remaining"]
-        assert r["expected_total"] == pytest.approx(r["played"] + r["expected_remaining"], abs=0.11)
+        assert r["expected_total"] == pytest.approx(
+            r["played"] + r["expected_remaining"] + r["stream_games"], abs=0.11
+        )
+        assert r["stream_games"] == 0 if r["is_me"] else r["stream_games"] >= 0
     mine = view["matchup"]["games"]["me"]
     # The demo has a DTD player on my team and an OUT one on IR.
     assert mine["uncertain_games"] > 0
@@ -248,3 +251,32 @@ def test_week_grid_marks_each_game_for_my_players(view):
         assert all(c["vs"] for c in p["cells"].values())
     future = [d for d in grid["days"] if not d["past"]]
     assert future and all(d["open_slots"] is not None for d in future)
+
+
+def test_opponent_streaming_raises_their_games_and_projection(view):
+    from fantasy.analysis.streaming import ASSUMED_WEEKLY_ADDS
+
+    s = view["matchup"]["opp_streaming"]
+    assert 0 < s["expected_adds"] <= min(s["acquisitions_left"], ASSUMED_WEEKLY_ADDS) + 1e-9
+    assert s["games"] > 0
+    opp = view["matchup"]["games"]["opp"]
+    assert opp["stream_games"] == pytest.approx(s["games"], abs=0.05)
+    assert view["matchup"]["games"]["me"]["stream_games"] == 0
+
+
+def test_weekly_rate_prefers_own_then_league_pace(snapshots):
+    import copy
+
+    from fantasy.analysis.streaming import weekly_rate
+
+    today = copy.deepcopy(snapshots[2])  # the fixture is shared
+    ctx = Context.build(today)
+    period = today.league.matchup_period
+    team, other = today.teams[0], today.teams[1]
+    for t in today.teams:
+        t.matchup_acquisitions = {period: 1}
+    assert weekly_rate(ctx, team)[1] == "assumed"
+    other.matchup_acquisitions = {period - 1: 4, period: 0}
+    assert weekly_rate(ctx, team) == (4.0, "league pace")
+    team.matchup_acquisitions = {period - 2: 1, period - 1: 3, period: 2}
+    assert weekly_rate(ctx, team) == (2.0, "own pace")

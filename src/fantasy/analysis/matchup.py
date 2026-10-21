@@ -10,6 +10,7 @@ likely win or loss once those odds pass 70/30; anything closer is a swing.
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -33,6 +34,8 @@ class SideProjection:
     remaining: dict[str, float] = field(default_factory=dict)
     elapsed: dict[str, float] = field(default_factory=dict)
     played_plans: list[DayPlan] = field(default_factory=list)
+    # Games the team is expected to add by streaming (opponents only).
+    stream_games: float = 0.0
 
     @property
     def scheduled_remaining(self) -> int:
@@ -144,7 +147,8 @@ def game_count(ctx: Context, side: SideProjection) -> dict:
         "scheduled_remaining": side.scheduled_remaining,
         "usable_remaining": usable,
         "expected_remaining": round(expected, 1),
-        "expected_total": round(played + expected, 1),
+        "stream_games": round(side.stream_games, 1),
+        "expected_total": round(played + expected + side.stream_games, 1),
         "out_games": sum(out_games.values()),
         "uncertain_games": sum(len(c) for c in doubtful.values()),
         "no_slot_games": side.scheduled_remaining - usable - sum(out_games.values()),
@@ -152,8 +156,11 @@ def game_count(ctx: Context, side: SideProjection) -> dict:
     }
 
 
-def league_game_counts(ctx: Context) -> list[dict]:
-    """Game counts for every pairing of the current matchup, mine first."""
+def league_game_counts(
+    ctx: Context, adjust: Callable[[SideProjection], None] | None = None
+) -> list[dict]:
+    """Game counts for every pairing of the current matchup, mine first.
+    `adjust` can change each side's projection first (expected streaming)."""
     rows = []
     seen: set[int] = set()
     for matchup in ctx.snap.matchups:
@@ -165,7 +172,10 @@ def league_game_counts(ctx: Context) -> list[dict]:
             if team is None or team.id in seen:
                 continue
             seen.add(team.id)
-            pair.append(game_count(ctx, project_side(ctx, team, side)))
+            projection = project_side(ctx, team, side)
+            if adjust is not None:
+                adjust(projection)
+            pair.append(game_count(ctx, projection))
         if len(pair) == 2:
             pair[0]["opponent"], pair[1]["opponent"] = pair[1]["team"], pair[0]["team"]
             pair[0]["edge"] = round(pair[0]["expected_total"] - pair[1]["expected_total"], 1)
