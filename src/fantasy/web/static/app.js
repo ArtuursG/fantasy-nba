@@ -793,6 +793,26 @@ function renderNextMatchup(v) {
   );
 }
 
+function tradeIdeas(v) {
+  const ideas = v.trade_ideas;
+  if (!ideas || !ideas.length) return [h("h3", {}, "Trade ideas"), h("p", { class: "muted" }, "No trade found that helps both teams right now.")];
+  const names = (list) => list.map((p) => playerLink(p.name, p.id)).reduce((acc, el, i) => (i ? [...acc, ", ", el] : [el]), []);
+  const rows = ideas.map((t) => ({
+    cells: [
+      { node: t.partner, cls: "strong" }, { node: names(t.give) }, { node: names(t.get) },
+      { node: `${t.avg_rank_before} → ${t.avg_rank_after}`, cls: "good" },
+      { node: `${t.partner_rank_before} → ${t.partner_rank_after}`, cls: t.partner_rank_after < t.partner_rank_before ? "good" : "" },
+      t.helps_me.join(", ") || "-", t.helps_them.join(", ") || "-",
+      t.matchup ? `${percent(t.matchup.p_win_before)} → ${percent(t.matchup.p_win_after)}` : "-",
+    ],
+  }));
+  return [
+    h("h3", {}, "Trade ideas: good for both sides"),
+    table(["With", "You give", "You get", "Your avg rank", "Their avg rank", "Helps you in", "Helps them in", "This matchup"], rows, { textCols: [0, 1, 2, 5, 6] }),
+    h("p", { class: "note" }, "Found by scoring every 1-for-1 and 2-for-1 on what each team needs (its weakest categories count most), then checked exactly: your average category rank improves (lower is better, your punt left out) and theirs doesn't get worse. A 2-for-1 means they drop someone and you get a free spot."),
+  ];
+}
+
 function renderTrade(v) {
   const me = v.my_team;
   if (!me) return null;
@@ -848,6 +868,7 @@ function renderTrade(v) {
   return card(
     "Trade analyzer",
     true,
+    tradeIdeas(v),
     tt && tt.buy.length ? [h("h3", {}, "Buy (worth more to you with your punt)"), h("ul", {}, tt.buy.map(line))] : null,
     tt && tt.sell.length ? [h("h3", {}, "Sell (worth more to the league)"), h("ul", {}, tt.sell.map(line))] : null,
     tt && tt.needs.length ? [h("h3", {}, `Help in your weakest categories (${tt.needs.join(", ")})`), h("ul", {}, tt.need_targets.slice(0, 6).map(line))] : null,

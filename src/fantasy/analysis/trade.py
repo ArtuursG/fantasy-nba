@@ -14,6 +14,7 @@ checks a trade has to pass.
 from __future__ import annotations
 
 from dataclasses import replace
+from itertools import combinations
 
 from fantasy.analysis.context import Context
 from fantasy.analysis.matchup import (
@@ -209,3 +210,143 @@ def evaluate_trade(ctx: Context, give: list[int], get: list[int]) -> dict:
 def _avg(ranks: dict[str, int], punt: tuple[str, ...]) -> float | None:
     counted = [r for c, r in ranks.items() if c not in punt]
     return round(sum(counted) / len(counted), 2) if counted else None
+
+
+# Trade finder
+
+BASE_NEED = 0.15
+MIN_MY_GAIN = 0.15
+MIN_THEIR_GAIN = 0.05
+MAX_PARTNER_VALUE_LOSS = 0.25
+SHORTLIST = 30
+SHORTLIST_PER_PARTNER = 5
+IDEAS = 8
+PER_PARTNER = 2
+
+
+def _needs(ranks: dict[str, int], punt: tuple[str, ...] = ()) -> dict[str, float]:
+    """Weight per category: little where a team is already top-3, most where
+    it ranks last."""
+    return {cat: BASE_NEED + max(0, rank - 3) / 7 for cat, rank in ranks.items() if cat not in punt}
+
+
+def _fit(z: dict[int, dict[str, float]], needs: dict[str, float], gets, gives) -> float:
+    return sum(
+        w * (sum(z[p].get(cat, 0.0) for p in gets) - sum(z[p].get(cat, 0.0) for p in gives))
+        for cat, w in needs.items()
+    )
+
+
+def find_trades(ctx: Context, strength: dict[int, dict]) -> list[dict]:
+    """1-for-1 and 2-for-1 trades that help both teams.
+
+    A quick needs-weighted score picks a shortlist (a spot freed by a 2-for-1
+    counts as a replacement-level pickup, the partner drops his weakest
+    player); the exact evaluation then keeps the trades that improve my
+    average category rank without hurting the partner's, best first.
+    """
+    snap = ctx.snap
+    me = ctx.my_team
+    if me is None:
+        return []
+    active = {
+        t.id: [s.player_id for s in t.roster if s.slot_id != IR_SLOT and s.player_id in ctx.lines]
+        for t in snap.teams
+    }
+    z = {pid: ctx.valuation.by_cat(ctx.lines[pid]) for ps in active.values() for pid in ps}
+    value = {pid: ctx.valuation.mean(ctx.lines[pid]) for pid in z}
+    my_needs = _needs(strength[me.id]["ranks"], ctx.punt)
+
+    scored = []
+    mine = active[me.id]
+    for team in snap.teams:
+        if team.id == me.id:
+            continue
+        their_needs = _needs(strength[team.id]["ranks"])
+        theirs = active[team.id]
+        weakest = min(theirs, key=lambda p: value[p], default=None)
+        for get in theirs:
+            for size in (1, 2):
+                for give in combinations(mine, size):
+                    gives, gets = list(give), [get]
+                    their_drop = [weakest] if size == 2 and weakest is not None else []
+                    my_gain = _fit(z, my_needs, gets, gives)
+                    their_gain = _fit(z, their_needs, gives, gets + their_drop)
+                    partner_value = (
+                        sum(value[p] for p in gives)
+                        - value[get]
+                        - sum(value[p] for p in their_drop)
+                    )
+                    if (
+                        my_gain >= MIN_MY_GAIN
+                        and their_gain >= MIN_THEIR_GAIN
+                        and partner_value >= -MAX_PARTNER_VALUE_LOSS
+                    ):
+                        scored.append((my_gain + 0.5 * their_gain, team, gives, gets))
+    scored.sort(key=lambda s: -s[0])
+
+    shortlist, per_partner = [], {}
+    for item in scored:
+        team = item[1]
+        if per_partner.get(team.id, 0) < SHORTLIST_PER_PARTNER:
+            per_partner[team.id] = per_partner.get(team.id, 0) + 1
+            shortlist.append(item)
+        if len(shortlist) == SHORTLIST:
+            break
+
+    ideas = []
+    for _, team, gives, gets in shortlist:
+        exact = evaluate_trade(ctx, gives, gets)
+        before, after = exact["avg_rank_before"], exact["avg_rank_after"]
+        theirs_before = _mean([r["rank_before"] for r in exact["theirs"]])
+        theirs_after = _mean([r["rank_after"] for r in exact["theirs"]])
+        if before is None or after is None or after >= before:
+            continue
+        if theirs_after > theirs_before + 0.1:
+            continue
+        ideas.append(
+            {
+                "partner": team.name,
+                "partner_id": team.id,
+                "give": exact["give"],
+                "get": exact["get"],
+                "avg_rank_before": before,
+                "avg_rank_after": after,
+                "partner_rank_before": round(theirs_before, 2),
+                "partner_rank_after": round(theirs_after, 2),
+                "value_change": exact["value_change"],
+                "partner_value_change": exact["partner_value_change"],
+                "matchup": exact["matchup"],
+                "warnings": exact["warnings"],
+                "helps_me": _helped(z, my_needs, gets, gives),
+                "helps_them": _helped(z, _needs(strength[team.id]["ranks"]), gives, gets),
+            }
+        )
+    ideas.sort(
+        key=lambda i: (
+            i["avg_rank_after"] - i["avg_rank_before"],
+            i["partner_rank_after"] - i["partner_rank_before"],
+        )
+    )
+    out, per_partner = [], {}
+    for idea in ideas:
+        if per_partner.get(idea["partner_id"], 0) >= PER_PARTNER:
+            continue
+        per_partner[idea["partner_id"]] = per_partner.get(idea["partner_id"], 0) + 1
+        out.append(idea)
+        if len(out) == IDEAS:
+            break
+    return out
+
+
+def _mean(values: list[int | None]) -> float:
+    counted = [v for v in values if v is not None]
+    return sum(counted) / len(counted) if counted else 0.0
+
+
+def _helped(z, needs: dict[str, float], gets: list[int], gives: list[int]) -> list[str]:
+    deltas = {
+        cat: sum(z[p].get(cat, 0.0) for p in gets) - sum(z[p].get(cat, 0.0) for p in gives)
+        for cat in needs
+    }
+    return [cat for cat, d in sorted(deltas.items(), key=lambda kv: -kv[1]) if d > 0.3][:4]

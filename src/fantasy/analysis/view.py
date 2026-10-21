@@ -55,7 +55,7 @@ from fantasy.analysis.streaming import (
     expected_streaming,
     weekly_rate,
 )
-from fantasy.analysis.trade import trade_targets
+from fantasy.analysis.trade import find_trades, trade_targets
 from fantasy.analysis.weekgrid import add_pickup_ideas, week_grid
 from fantasy.espn.constants import (
     BENCH_SLOT,
@@ -620,6 +620,7 @@ def build_view(
         "hot_free_agents": hot_free_agents(ctx, roles, opps, strength),
         "punt_analysis": punt_analysis(ctx, strength),
         "recap": last_matchup_recap(ctx),
+        "trade_ideas": find_trades(ctx, strength),
         "player_cards": player_cards(ctx, ranking_rows, status_history or {}, tz),
         "season_outlook": season_outlook(
             ctx,

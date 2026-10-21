@@ -510,3 +510,16 @@ def test_first_forecast_scores_the_calls():
     ]
     f = first_forecast(forecasts, recap)
     assert f["p_win_matchup"] == 0.55 and f["called"] == 1 and f["judged"] == 2
+
+
+def test_trade_ideas_improve_me_without_hurting_the_partner(view, today):
+    ideas = view["trade_ideas"]
+    assert ideas
+    mine = {s.player_id for s in today.team(today.my_team_id).roster}
+    for t in ideas:
+        assert t["avg_rank_after"] < t["avg_rank_before"]
+        assert t["partner_rank_after"] <= t["partner_rank_before"] + 0.1
+        assert {p["id"] for p in t["give"]} <= mine
+        assert len(t["get"]) == 1 and 1 <= len(t["give"]) <= 2
+    partners = [t["partner_id"] for t in ideas]
+    assert all(partners.count(p) <= 2 for p in partners)

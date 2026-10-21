@@ -235,6 +235,7 @@ class Report:
         self.habits()
         self.punt_analysis()
         self.trade_targets()
+        self.trade_ideas()
         if not self.compact:
             self.rankings()
             self.all_rosters()
@@ -1168,6 +1169,36 @@ class Report:
                 ),
             )
         )
+
+    def trade_ideas(self) -> None:
+        ideas = self.view.get("trade_ideas")
+        if ideas is None:
+            return
+        self.section("TRADE IDEAS (GOOD FOR BOTH SIDES)")
+        if not ideas:
+            self.add("No trade found that helps both teams right now.")
+            return
+        self.add(
+            "Every 1-for-1 and 2-for-1 scored on each team's needs, then checked exactly: my "
+            "average category rank improves (punt left out) and the partner's doesn't get worse.",
+            "",
+        )
+        for t in ideas:
+            give = ", ".join(p["name"] for p in t["give"])
+            get = ", ".join(p["name"] for p in t["get"])
+            matchup = ""
+            if t["matchup"]:
+                matchup = (
+                    f" | this matchup {t['matchup']['p_win_before'] * 100:.0f}% -> "
+                    f"{t['matchup']['p_win_after'] * 100:.0f}%"
+                )
+            self.add(
+                f"- With {t['partner']}: give {give}, get {get} | my avg rank "
+                f"{t['avg_rank_before']} -> {t['avg_rank_after']} | theirs "
+                f"{t['partner_rank_before']} -> {t['partner_rank_after']} | helps me in "
+                f"{', '.join(t['helps_me']) or '-'}; them in {', '.join(t['helps_them']) or '-'}"
+                f"{matchup}"
+            )
 
     def trade_targets(self) -> None:
         self.section("TRADE TARGETS")
