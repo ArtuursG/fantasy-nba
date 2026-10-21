@@ -2,8 +2,9 @@ name: Daily report
 
 on:
   schedule:
-    # 05:52 UTC: 07:52 in Riga in winter, 08:52 in summer, after the last NBA games.
-    - cron: "52 5 * * *"
+    # Every two hours: results soon after the games, fresh injury news
+    # before lineup lock. GitHub often starts scheduled runs late.
+    - cron: "23 */2 * * *"
   workflow_dispatch:
 
 permissions:
