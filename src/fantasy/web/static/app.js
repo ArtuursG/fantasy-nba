@@ -594,6 +594,8 @@ function openPlayer(pid) {
   const canTry = currentView.what_if && currentView.what_if.adds.some((p) => String(p.id) === String(pid));
   const tryBtn = canTry ? h("button", { type: "button", class: "primary" }, "Try in What if") : null;
   if (tryBtn) tryBtn.addEventListener("click", () => tryPickup(Number(pid)));
+  const cmpBtn = h("button", { type: "button" }, compareLabel(pid));
+  cmpBtn.addEventListener("click", () => { toggleCompare(pid); cmpBtn.textContent = compareLabel(pid); });
   const drawer = h("aside", { class: "drawer", role: "dialog", "aria-modal": "true", "aria-label": c.name },
     h("header", { class: "drawer-head" },
       h("div", {},
@@ -619,9 +621,93 @@ function openPlayer(pid) {
     c.week.length ? h("div", { class: "chips" }, c.week.map((g) => h("span", { class: "chip" }, `${g.day} ${g.vs}`))) : h("p", { class: "muted" }, "No games left this matchup."),
     splitRows.length ? [h("h3", {}, "Per game"), table(["Period", "G", "MIN", "PTS", "REB", "AST", "3PM", "STL", "BLK", "TO", "FG%", "FT%"], splitRows, { textCols: [0] })] : null,
     gameRows.length ? [h("h3", {}, "Recent games"), table(["Day", "Opp", "MIN", "PTS", "REB", "AST", "3PM", "STL", "BLK", "TO", "FG", "FT"], gameRows, { textCols: [0, 1] }), h("p", { class: "note" }, "(b) came off the bench.")] : null,
-    tryBtn ? h("div", { class: "actions" }, tryBtn) : null
+    h("div", { class: "actions" }, tryBtn, cmpBtn)
   );
   const backdrop = h("div", { class: "drawer-backdrop" }, drawer);
+  backdrop.addEventListener("click", (e) => { if (e.target === backdrop) closePlayer(); });
+  document.body.append(backdrop);
+  document.body.classList.add("drawer-open");
+  close.focus();
+}
+
+// Compare up to three players side by side.
+let compareIds = [];
+
+function compareLabel(pid) {
+  return compareIds.includes(String(pid)) ? `Remove from compare (${compareIds.length}/3)` : compareIds.length >= 3 ? "Compare is full (3)" : "Compare";
+}
+
+function toggleCompare(pid) {
+  pid = String(pid);
+  if (compareIds.includes(pid)) compareIds = compareIds.filter((x) => x !== pid);
+  else if (compareIds.length < 3) compareIds.push(pid);
+  updateTray();
+}
+
+function updateTray() {
+  let tray = $("compare-tray");
+  if (!tray) {
+    tray = h("div", { id: "compare-tray", class: "compare-tray", role: "region", "aria-label": "Players to compare" });
+    document.body.append(tray);
+  }
+  const cards = currentView ? compareIds.map((id) => currentView.player_cards[id]).filter(Boolean) : [];
+  tray.hidden = !cards.length;
+  const open = h("button", { type: "button", class: "primary", disabled: cards.length < 2 ? true : null }, "Compare " + cards.length);
+  open.addEventListener("click", openCompare);
+  tray.replaceChildren(
+    h("span", { class: "stat-label" }, "Compare"),
+    ...cards.map((c) => {
+      const x = h("button", { type: "button", class: "mini", "aria-label": "Remove " + c.name }, "×");
+      x.addEventListener("click", () => toggleCompare(c.id));
+      return h("span", { class: "chip" }, c.name, " ", x);
+    }),
+    open
+  );
+}
+
+function openCompare() {
+  const cards = compareIds.map((id) => currentView.player_cards[id]).filter(Boolean);
+  if (cards.length < 2) return;
+  closePlayer();
+  lastFocus = document.activeElement;
+  const line = (c) => (c.splits.last15 || c.splits.season || c.splits.projected || {});
+  const numeric = [
+    ["Value, season", (c) => c.values.season?.value ?? c.values.projection?.value, 2],
+    ["Value, last 15 days", (c) => c.values.last15?.value, 2],
+    ["MIN", (c) => line(c).min, 1], ["PTS", (c) => line(c).pts, 1], ["REB", (c) => line(c).reb, 1],
+    ["AST", (c) => line(c).ast, 1], ["3PM", (c) => line(c).tpm, 1], ["STL", (c) => line(c).stl, 1],
+    ["BLK", (c) => line(c).blk, 1], ["TO", (c) => line(c).to, 1, true],
+    ["FG%", (c) => line(c).fg_pct, 3], ["FT%", (c) => line(c).ft_pct, 3],
+    ["Games left this week", (c) => c.week.length, 0],
+    ["Games left, season", (c) => c.ros_games, 0],
+    ["Playoff-week games", (c) => c.playoff_games, 0],
+    ["Rostered %", (c) => c.roster_pct, 0],
+  ];
+  const rows = [
+    { cells: ["Team · pos", ...cards.map((c) => `${c.pro_team} · ${c.positions}`)] },
+    { cells: ["Owner", ...cards.map((c) => c.owner)] },
+    { cells: ["Status", ...cards.map((c) => c.health)] },
+    { cells: ["This week", ...cards.map((c) => c.week.map((g) => `${g.day.split(" ")[0]} ${g.vs}`).join(", ") || "-")], cls: "wrap-row" },
+    ...numeric.map(([label, get, digits, lowerBetter]) => {
+      const values = cards.map(get);
+      const known = values.filter((x) => x !== null && x !== undefined);
+      const best = known.length > 1 && new Set(known).size > 1 ? (lowerBetter ? Math.min(...known) : Math.max(...known)) : null;
+      return {
+        cells: [label, ...values.map((x) => ({
+          node: x === null || x === undefined ? "-" : digits === 3 ? pct(x) : label.startsWith("Value") ? signed(x, 2) : num(x, digits),
+          cls: best !== null && x === best ? "best" : "",
+        }))],
+      };
+    }),
+  ];
+  const close = h("button", { type: "button", class: "drawer-close", "aria-label": "Close" }, "×");
+  close.addEventListener("click", closePlayer);
+  const panel = h("aside", { class: "drawer compare", role: "dialog", "aria-modal": "true", "aria-label": "Compare players" },
+    h("header", { class: "drawer-head" }, h("div", {}, h("div", { class: "drawer-kicker" }, "Side by side"), h("h2", {}, "Compare")), close),
+    table(["", ...cards.map((c) => c.name)], rows, { textCols: [0] }),
+    h("p", { class: "note" }, "Per-game stats over the last 15 days (season when there's nothing recent). Highlighted: the best in each row (fewest turnovers).")
+  );
+  const backdrop = h("div", { class: "drawer-backdrop" }, panel);
   backdrop.addEventListener("click", (e) => { if (e.target === backdrop) closePlayer(); });
   document.body.append(backdrop);
   document.body.classList.add("drawer-open");
@@ -1641,5 +1727,20 @@ function setupFinder() {
   document.addEventListener("click", (e) => { if (!e.target.closest(".finder")) hide(); });
 }
 setupFinder();
+
+// Theme: follow the device, or light or dark by choice.
+const THEMES = [["", "Auto"], ["light", "Light"], ["dark", "Dark"]];
+function applyTheme(key) {
+  if (key) document.documentElement.dataset.theme = key;
+  else delete document.documentElement.dataset.theme;
+  $("theme").textContent = (THEMES.find(([k]) => k === key) || THEMES[0])[1];
+  remember("theme", key);
+}
+$("theme").addEventListener("click", () => {
+  const now = document.documentElement.dataset.theme || "";
+  const next = THEMES[(THEMES.findIndex(([k]) => k === now) + 1) % THEMES.length][0];
+  applyTheme(next);
+});
+applyTheme(recall("theme") || "");
 
 loadState().catch((err) => setStatus("Could not load the dashboard: " + err, "error"));
