@@ -26,6 +26,7 @@ SECTIONS = [
     "CATEGORY STRENGTH (projected, rank 1 = best)",
     "SEASON CATEGORY TOTALS (actual, rank 1 = best)",
     "SEASON OUTLOOK",
+    "MANAGER HABITS",
     "TRADE TARGETS",
     "PLAYER RANKINGS",
     "ALL TEAM ROSTERS",

@@ -36,6 +36,8 @@ class SideProjection:
     played_plans: list[DayPlan] = field(default_factory=list)
     # Games the team is expected to add by streaming (opponents only).
     stream_games: float = 0.0
+    # Games it is expected to leave on the bench, by its habits (opponents only).
+    waste_games: float = 0.0
 
     @property
     def scheduled_remaining(self) -> int:
@@ -155,7 +157,8 @@ def game_count(ctx: Context, side: SideProjection) -> dict:
         "usable_remaining": usable,
         "expected_remaining": round(expected, 1),
         "stream_games": round(side.stream_games, 1),
-        "expected_total": round(played + expected + side.stream_games, 1),
+        "waste_games": round(side.waste_games, 1),
+        "expected_total": round(played + expected + side.stream_games - side.waste_games, 1),
         "out_games": sum(out_games.values()),
         "uncertain_games": sum(len(c) for c in doubtful.values()),
         "no_slot_games": side.scheduled_remaining - usable - sum(out_games.values()),

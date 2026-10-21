@@ -15,6 +15,7 @@ from fantasy.analysis.cards import player_cards
 from fantasy.analysis.changes import compare
 from fantasy.analysis.context import Context
 from fantasy.analysis.freeagents import rank_free_agents
+from fantasy.analysis.habits import apply_lineup_waste, lineup_habits
 from fantasy.analysis.lineup import lineup_check
 from fantasy.analysis.matchup import (
     SideProjection,
@@ -40,7 +41,12 @@ from fantasy.analysis.season import playoff_games, playoff_sps, season_outlook
 from fantasy.analysis.simulator import simulate_moves, what_if
 from fantasy.analysis.stats import REVERSE_CATS, average, usage_proxy
 from fantasy.analysis.strategy import category_strategy, next_matchup
-from fantasy.analysis.streaming import Streaming, apply_streaming, expected_streaming
+from fantasy.analysis.streaming import (
+    Streaming,
+    apply_streaming,
+    expected_streaming,
+    weekly_rate,
+)
 from fantasy.analysis.trade import trade_targets
 from fantasy.analysis.weekgrid import add_pickup_ideas, week_grid
 from fantasy.espn.constants import (
@@ -240,6 +246,35 @@ def _transactions(ctx: Context, prev: Snapshot | None) -> list[dict]:
     return rows
 
 
+def _habit_rows(ctx: Context, habits: dict[int, dict], opp_id: int | None) -> list[dict]:
+    since = ctx.now - timedelta(days=TRANSACTION_DAYS)
+    rows = []
+    for team in ctx.snap.teams:
+        rate, basis = weekly_rate(ctx, team)
+        adds = sum(
+            1
+            for t in ctx.snap.transactions
+            if t.team_id == team.id and t.ts and parse_iso(t.ts) >= since and t.status == "EXECUTED"
+            for i in t.items
+            if i.type == "ADD"
+        )
+        rows.append(
+            {
+                "team_id": team.id,
+                "team": team.name,
+                "is_me": team.id == ctx.snap.my_team_id,
+                "is_opp": team.id == opp_id,
+                **habits[team.id],
+                "adds_7d": adds,
+                "weekly_rate": round(rate, 1),
+                "rate_basis": basis,
+                "acquisitions_left": _acquisitions(ctx, team)["remaining"],
+            }
+        )
+    rows.sort(key=lambda r: (-(r["lost_per_week"] or 0), r["team"]))
+    return rows
+
+
 def _pickups(ctx: Context, opp_id: int | None, prev: Snapshot | None) -> list[dict]:
     """What every other team added in the last week, with enough about each
     player to judge the move. My opponent comes first. Roster changes since
@@ -427,10 +462,14 @@ def build_view(
     strategy = None
     candidates = [r["player_id"] for r in fa_ranked if r["games_remaining"] > 0]
 
+    habits = {t.id: lineup_habits(ctx, t.id) for t in snap.teams}
+
     def add_streaming(side: SideProjection) -> Streaming | None:
-        """Other teams' expected streaming goes into their projection."""
+        """Other teams' expected streaming, and the games their lineups
+        usually leave on the bench, go into their projection."""
         if side.team.id == snap.my_team_id:
             return None
+        apply_lineup_waste(side, habits[side.team.id]["waste_rate"])
         streaming = expected_streaming(
             ctx, side, _acquisitions(ctx, side.team)["remaining"], candidates
         )
@@ -562,6 +601,7 @@ def build_view(
         ],
         "transactions": _transactions(ctx, prev),
         "pickups": _pickups(ctx, opp_id, prev),
+        "habits": _habit_rows(ctx, habits, opp_id),
         "player_cards": player_cards(ctx, ranking_rows, status_history or {}, tz),
         "season_outlook": season_outlook(
             ctx,

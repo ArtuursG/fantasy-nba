@@ -418,3 +418,32 @@ def test_card_history_counts_games_missed_while_out(today):
         if parse_iso(first_game.start) <= parse_iso(g.start) < ctx.now
     )
     assert rows == [{"status": "OUT", "since": rows[0]["since"], "missed": team_games}]
+
+
+def test_lineup_habits_count_games_left_on_the_bench(today):
+    import copy
+
+    from fantasy.analysis.habits import lineup_habits
+    from fantasy.timeutil import EASTERN
+
+    snap = copy.deepcopy(today)
+    ctx = Context.build(snap)
+    day_sp = next(
+        sp
+        for sp in sorted(ctx.calendar.by_sp)
+        if ctx.calendar.date_of(sp) < ctx.now.astimezone(EASTERN).date()
+        and any(any(g.sp == sp and g.played for g in p.games) for p in snap.players.values())
+    )
+    games = ctx.calendar.by_sp[day_sp]
+    playing = {g.home_id for g in games} | {g.away_id for g in games}
+    benched = next(
+        p for p in snap.players.values() if any(g.sp == day_sp and g.played for g in p.games)
+    )
+    idle = next(p for p in snap.players.values() if p.pro_team_id and p.pro_team_id not in playing)
+    slots = {0: 1}
+    snap.league.lineup_slots = slots | {12: 3}
+    snap.lineups = {day_sp: {2: {idle.id: 0, benched.id: 12}}}
+    ctx = Context.build(snap)
+    habits = lineup_habits(ctx, 2)
+    assert habits["days"] == 1 and habits["lost_games"] == 1
+    assert habits["waste_rate"] == 0.0  # too few days to judge a habit

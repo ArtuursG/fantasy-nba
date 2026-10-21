@@ -236,6 +236,25 @@ function renderByDay(v) {
   );
 }
 
+function renderHabits(v) {
+  const rows = v.habits;
+  if (!rows || !rows.length) return null;
+  return card(
+    "Manager habits",
+    true,
+    h("p", { class: "note" }, "From the lineups ESPN had each day (last two weeks): games a team left on the bench while a starting slot was empty or held by someone without a game (positions not checked, so an upper bound). Pickup pace: acquisitions per finished matchup. Teams that leave games on the bench get that share taken off their forecast."),
+    table(["Team", "Days seen", "Games left on bench", "Per week", "Adds, 7 days", "Pickups per week", "Acq. left now"], rows.map((r) => ({
+      cls: r.is_me ? "mine" : null,
+      cells: [
+        { node: [r.team, r.is_opp ? tag("Opponent", "solid") : null], cls: "strong" },
+        r.days, r.lost_games, { node: r.lost_per_week === null ? "-" : num(r.lost_per_week), cls: r.lost_per_week >= 2 ? "bad" : "" },
+        r.adds_7d, `${num(r.weekly_rate)}${r.rate_basis === "own pace" ? "" : " *"}`, r.acquisitions_left,
+      ],
+    })), { textCols: [0] }),
+    h("p", { class: "note" }, "* league pace or an assumption until the team has a finished matchup.")
+  );
+}
+
 function renderSeasonOutlook(v) {
   const so = v.season_outlook;
   if (!so) return null;
@@ -614,12 +633,13 @@ function renderGameCounts(v) {
     true,
     h("p", { class: "note" }, "Played so far plus the games left that fit a starting slot, each weighted by the chance the player plays: DTD 70% today and tomorrow and 85% after, questionable 50%, doubtful 20%, OUT 0 until his expected return, and 85% for a top-30 player on the second night of a back-to-back. Streams: games other teams are expected to add with pickups, from their acquisitions left and how many they usually use (you: none, that's your call)."),
     table(
-      ["Team", "Opponent", "Played", "Left", "Expected", "Streams", "Total", "Edge", "Lost to OUT", "Uncertain", "No slot"],
+      ["Team", "Opponent", "Played", "Left", "Expected", "Streams", "Lineup slips", "Total", "Edge", "Lost to OUT", "Uncertain", "No slot"],
       rows.map((r, i) => ({
         cls: r.is_me ? "mine" : i % 2 === 1 ? "pair-end" : null,
         cells: [
           { node: r.team, cls: "strong" }, r.opponent || "-", r.played, r.usable_remaining, num(r.expected_remaining),
           r.stream_games ? "+" + num(r.stream_games) : "-",
+          r.waste_games ? "−" + num(r.waste_games) : "-",
           { node: num(r.expected_total), cls: "strong" },
           { node: signed(r.edge), cls: r.edge >= 1 ? "good" : r.edge <= -1 ? "bad" : "" },
           { node: r.out_games, cls: r.out_games ? "bad" : "" },
@@ -1313,7 +1333,7 @@ function render(view, demo) {
     matchup: [renderMatchup(view), renderTrend(view), renderByDay(view), renderTargets(view), renderWhatIf(view), renderGameCounts(view), renderWeekGrid(view), renderStrategy(view), renderAccuracy(view), renderSchedule(view), renderStreamPlan(view), renderSimulator(view), renderNextMatchup(view)],
     roster: [renderMyRoster(view), renderAdvanced(view)],
     wire: [renderPickups(view), renderFreeAgents(view), renderTransactions(view), renderPopular(view)],
-    league: [renderSeasonOutlook(view), renderStrength(view), renderSeason(view), renderTrade(view), renderTeams(view)],
+    league: [renderSeasonOutlook(view), renderHabits(view), renderStrength(view), renderSeason(view), renderTrade(view), renderTeams(view)],
     rankings: [renderRankings(view)],
     report: [renderReport()],
     setup: STATIC ? [] : [renderSettings()],

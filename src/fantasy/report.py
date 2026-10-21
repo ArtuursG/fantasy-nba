@@ -230,6 +230,7 @@ class Report:
         self.strength()
         self.season_totals()
         self.season_outlook()
+        self.habits()
         self.trade_targets()
         if not self.compact:
             self.rankings()
@@ -251,7 +252,8 @@ class Report:
             "weighted by the chance the player plays (DTD 70% today and tomorrow, 85% after; "
             "Questionable 50%; Doubtful 20%; OUT 0 until the expected return). Streams = games "
             "other teams are expected to add with pickups (acquisitions left and their usual "
-            "pace; none for me). Total = Played + Expected + Streams. OUT = games lost to OUT "
+            "pace; none for me). Total = Played + Expected + Streams - games an opponent's lineup "
+            "habits usually leave on the bench. OUT = games lost to OUT "
             "players; No slot = games with no free slot.",
             "",
         )
@@ -1153,6 +1155,35 @@ class Report:
                         r["playoff_games"] if r["playoff_games"] is not None else "-",
                     ]
                     for r in so["rows"]
+                ),
+            )
+        )
+
+    def habits(self) -> None:
+        rows = self.view.get("habits")
+        if not rows:
+            return
+        self.section("MANAGER HABITS")
+        self.add(
+            "Lineups (last two weeks of daily lineups): games left on the bench while a starting "
+            "slot was empty or idle (upper bound). Pickup pace = acquisitions per finished "
+            "matchup (* = league pace or assumed).",
+            "",
+        )
+        self.lines.extend(
+            table(
+                ["Team", "Days", "Bench games", "Per week", "Adds 7d", "Pace", "Acq left"],
+                (
+                    [
+                        r["team"] + (" (me)" if r["is_me"] else " (opp)" if r["is_opp"] else ""),
+                        r["days"],
+                        r["lost_games"],
+                        num(r["lost_per_week"]) if r["lost_per_week"] is not None else "-",
+                        r["adds_7d"],
+                        f"{r['weekly_rate']:.1f}" + ("" if r["rate_basis"] == "own pace" else "*"),
+                        r["acquisitions_left"],
+                    ]
+                    for r in rows
                 ),
             )
         )
