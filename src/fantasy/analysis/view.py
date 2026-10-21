@@ -36,6 +36,7 @@ from fantasy.analysis.schedule import (
     plan_days,
     positions,
 )
+from fantasy.analysis.season import playoff_games, playoff_sps, season_outlook
 from fantasy.analysis.simulator import simulate_moves, what_if
 from fantasy.analysis.stats import REVERSE_CATS, average, usage_proxy
 from fantasy.analysis.strategy import category_strategy, next_matchup
@@ -159,6 +160,7 @@ def player_row(
         ),
         "game_days": [day_label(date.fromisoformat(g.date)) for g in remaining],
         "b2b": back_to_backs([date.fromisoformat(g.date) for g in games]),
+        "playoff_games": playoff_games(ctx, player.pro_team_id, playoff_sps(ctx)),
         "value": round(ctx.valuation.mean(ctx.lines[player.id], ctx.punt), 2),
         "league_value": round(ctx.valuation.mean(ctx.lines[player.id]), 2),
         "cat_values": {
@@ -560,6 +562,10 @@ def build_view(
         "transactions": _transactions(ctx, prev),
         "pickups": _pickups(ctx, opp_id, prev),
         "player_cards": player_cards(ctx, ranking_rows),
+        "season_outlook": season_outlook(
+            ctx,
+            {r["cat"]: r["p_win"] for r in matchup["projected"]} if matchup else None,
+        ),
         "free_agents": free_agent_rows,
         "popular_free_agents": [
             {

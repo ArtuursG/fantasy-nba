@@ -366,3 +366,30 @@ def test_pickup_ideas_only_on_open_days_and_for_players_who_play(view, today):
             games = ctx.calendar.team_games(player.pro_team_id, ctx.sps)
             assert any(g.sp == day["sp"] for g in games)
     assert any(day["ideas"] for day in grid["days"])
+
+
+def test_season_outlook_simulates_the_rest_of_the_regular_season(view, today):
+    so = view["season_outlook"]
+    assert so["regular_periods"] == 18 and so["playoff_teams"] == 4
+    assert so["playoff_weeks"] == [19, 20]
+    rows = so["rows"]
+    assert len(rows) == len(today.teams)
+    assert sum(r["playoff_pct"] for r in rows) == pytest.approx(4.0, abs=0.01)
+    assert [r["playoff_pct"] for r in rows] == sorted(
+        (r["playoff_pct"] for r in rows), reverse=True
+    )
+    for r in rows:
+        assert 1 <= r["avg_seed"] <= len(rows)
+
+
+def test_category_odds_favour_the_stronger_side():
+    from fantasy.analysis.season import _cat_odds
+
+    strong = {"pts": 20.0, "fgm": 8.0, "fga": 16.0, "to": 1.0}
+    weak = {"pts": 15.0, "fgm": 7.0, "fga": 16.0, "to": 2.0}
+    assert _cat_odds(strong, weak, 33, "PTS") > 0.9
+    assert _cat_odds(strong, weak, 33, "FG%") > 0.5
+    assert _cat_odds(strong, weak, 33, "TO") > 0.9  # fewer turnovers wins
+    assert _cat_odds(weak, strong, 33, "PTS") == pytest.approx(
+        1 - _cat_odds(strong, weak, 33, "PTS")
+    )

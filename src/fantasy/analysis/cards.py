@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from fantasy.analysis.context import Context
 from fantasy.analysis.schedule import game_started, positions
+from fantasy.analysis.season import playoff_games, playoff_sps
 from fantasy.espn.constants import HEALTH_LABELS
 from fantasy.models import Game, Player, StatLine
 from fantasy.timeutil import day_label
@@ -23,14 +24,17 @@ def player_cards(ctx: Context, rankings: dict[str, list[dict]]) -> dict[str, dic
     ids = {s.player_id for t in snap.teams for s in t.roster} | set(snap.free_agent_ids)
     ranked = {key: {r["id"]: r for r in rows} for key, rows in rankings.items()}
     cards = {}
+    po_sps = playoff_sps(ctx)
     for pid in sorted(ids):
         player = snap.players.get(pid)
         if player is not None:
-            cards[str(pid)] = _card(ctx, player, ranked)
+            cards[str(pid)] = _card(ctx, player, ranked, po_sps)
     return cards
 
 
-def _card(ctx: Context, player: Player, ranked: dict[str, dict[int, dict]]) -> dict:
+def _card(
+    ctx: Context, player: Player, ranked: dict[str, dict[int, dict]], po_sps: list[int]
+) -> dict:
     remaining = [
         g
         for g in (
@@ -63,6 +67,7 @@ def _card(ctx: Context, player: Player, ranked: dict[str, dict[int, dict]]) -> d
             for g in remaining
             if ctx.calendar.date_of(g.sp)
         ],
+        "playoff_games": playoff_games(ctx, player.pro_team_id, po_sps),
         "values": {
             key: {"value": row["value"], "rank": row["rank"]}
             for key, rows in ranked.items()

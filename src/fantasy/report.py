@@ -229,6 +229,7 @@ class Report:
         self.important_changes()
         self.strength()
         self.season_totals()
+        self.season_outlook()
         self.trade_targets()
         if not self.compact:
             self.rankings()
@@ -1110,6 +1111,37 @@ class Report:
                 f"My weakest categories: {', '.join(tt['needs'])}. Players who add most there:"
             )
             self.add(*(f"- {who(r)}" for r in tt["need_targets"]))
+
+    def season_outlook(self) -> None:
+        so = self.view.get("season_outlook")
+        if not so:
+            return
+        self.section("SEASON OUTLOOK")
+        assumed = " (assumed)" if so["playoff_teams_assumed"] else ""
+        self.add(
+            f"Rest of the regular season ({so['matchups_left']} matchups incl. this one) "
+            f"simulated on ESPN's schedule from current rosters. Top {so['playoff_teams']}"
+            f"{assumed} make the playoffs; standings count {so['scoring']}. Playoff-week games "
+            f"= NBA games of each roster's players in playoff weeks "
+            f"{', '.join(map(str, so['playoff_weeks'])) or '-'}.",
+            "",
+        )
+        self.lines.extend(
+            table(
+                ["Team", "Record", "Projected", "Playoff %", "Avg seed", "Playoff-week games"],
+                (
+                    [
+                        r["team"] + (" (me)" if r["is_me"] else ""),
+                        r["record"],
+                        r["projected"],
+                        f"{r['playoff_pct'] * 100:.0f}%",
+                        f"{r['avg_seed']:.1f}",
+                        r["playoff_games"] if r["playoff_games"] is not None else "-",
+                    ]
+                    for r in so["rows"]
+                ),
+            )
+        )
 
     def season_totals(self) -> None:
         rows = self.view.get("season_standings")

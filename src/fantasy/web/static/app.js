@@ -217,6 +217,32 @@ function renderMatchup(v) {
   );
 }
 
+function renderSeasonOutlook(v) {
+  const so = v.season_outlook;
+  if (!so) return null;
+  const rows = so.rows.map((r) => ({
+    cls: r.is_me ? "mine" : null,
+    cells: [
+      { node: r.team, cls: "strong" }, r.record, r.projected,
+      { node: [percent(r.playoff_pct), probBar(r.playoff_pct, r.playoff_pct >= 0.7 ? "good" : r.playoff_pct <= 0.3 ? "bad" : "warn")] },
+      r.avg_seed.toFixed(1), r.playoff_games ?? "-",
+    ],
+  }));
+  const me = so.rows.find((r) => r.is_me);
+  return card(
+    "Season outlook",
+    true,
+    me ? stats(
+      stat("Your playoff chance", percent(me.playoff_pct), me.playoff_pct >= 0.5 ? "good" : "bad"),
+      stat("Average seed", me.avg_seed.toFixed(1)),
+      stat("Projected record", me.projected),
+      stat("Matchups left", String(so.matchups_left))
+    ) : null,
+    table(["Team", "Record", "Projected", "Playoffs", "Avg seed", "Playoff-week games"], rows, { textCols: [0] }),
+    h("p", { class: "note" }, `The rest of the regular season played out ${"1000"} times on ESPN's schedule, from each roster's healthy players as they stand (your current matchup from its live forecast). Top ${so.playoff_teams} make the playoffs${so.playoff_teams_assumed ? " (assumed: ESPN didn't say)" : ""}; standings count ${so.scoring}. Playoff-week games: NBA games of the roster's players in playoff weeks ${so.playoff_weeks.join(", ") || "-"}.`)
+  );
+}
+
 function renderTrend(v) {
   const t = v.trend;
   if (!t || !t.points.length) return null;
@@ -864,13 +890,13 @@ function rosterRows(roster, withUsable) {
       cells: [
         { node: [playerLink(r.name, r.id), mark] }, r.pro_team, r.positions, r.slot || "-", healthCell(r), r.gp,
         num(line && line.min), minutes(r.last5_min), trendCell(r.trend), ...statCells(line),
-        num(r.roster_pct), r.games_remaining, withUsable ? (r.usable_remaining ?? "-") : null,
+        num(r.roster_pct), r.games_remaining, r.playoff_games ?? "-", withUsable ? (r.usable_remaining ?? "-") : null,
       ].filter((x) => x !== null),
     };
   });
 }
 
-const ROSTER_HEAD = ["Player", "Team", "Pos", "Slot", "Health", "GP", "MIN", "Last 5 MIN", "Trend", "FG%", "FT%", ...STATS.map(([l]) => l), "Ros%", "Games left"];
+const ROSTER_HEAD = ["Player", "Team", "Pos", "Slot", "Health", "GP", "MIN", "Last 5 MIN", "Trend", "FG%", "FT%", ...STATS.map(([l]) => l), "Ros%", "Games left", "Playoff G"];
 
 function renderMyRoster(v) {
   const t = v.my_team;
@@ -1248,7 +1274,7 @@ function render(view, demo) {
     matchup: [renderMatchup(view), renderTrend(view), renderTargets(view), renderWhatIf(view), renderGameCounts(view), renderWeekGrid(view), renderStrategy(view), renderAccuracy(view), renderSchedule(view), renderStreamPlan(view), renderSimulator(view), renderNextMatchup(view)],
     roster: [renderMyRoster(view), renderAdvanced(view)],
     wire: [renderPickups(view), renderFreeAgents(view), renderTransactions(view), renderPopular(view)],
-    league: [renderStrength(view), renderSeason(view), renderTrade(view), renderTeams(view)],
+    league: [renderSeasonOutlook(view), renderStrength(view), renderSeason(view), renderTrade(view), renderTeams(view)],
     rankings: [renderRankings(view)],
     report: [renderReport()],
     setup: STATIC ? [] : [renderSettings()],
