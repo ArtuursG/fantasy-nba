@@ -7,19 +7,26 @@ value and rank in each rankings period.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, tzinfo
+
 from fantasy.analysis.context import Context
 from fantasy.analysis.schedule import game_started, positions
 from fantasy.analysis.season import playoff_games, playoff_sps
 from fantasy.espn.constants import HEALTH_LABELS
 from fantasy.models import Game, Player, StatLine
-from fantasy.timeutil import day_label
+from fantasy.timeutil import day_label, parse_iso
 
 RECENT_GAMES = 10
 SPLITS = ("season", "last30", "last15", "last7", "projected", "prev_season")
 GAME_FIELDS = ("min", "pts", "reb", "ast", "tpm", "stl", "blk", "to", "fgm", "fga", "ftm", "fta")
 
 
-def player_cards(ctx: Context, rankings: dict[str, list[dict]]) -> dict[str, dict]:
+def player_cards(
+    ctx: Context,
+    rankings: dict[str, list[dict]],
+    history: dict[int, list[tuple[str, str]]] | None = None,
+    tz: tzinfo | None = None,
+) -> dict[str, dict]:
     snap = ctx.snap
     ids = {s.player_id for t in snap.teams for s in t.roster} | set(snap.free_agent_ids)
     ranked = {key: {r["id"]: r for r in rows} for key, rows in rankings.items()}
@@ -29,7 +36,44 @@ def player_cards(ctx: Context, rankings: dict[str, list[dict]]) -> dict[str, dic
         player = snap.players.get(pid)
         if player is not None:
             cards[str(pid)] = _card(ctx, player, ranked, po_sps)
+            cards[str(pid)]["history"] = status_history(
+                ctx, player, (history or {}).get(pid, []), tz or UTC
+            )
     return cards
+
+
+HISTORY_ROWS = 6
+
+
+def status_history(
+    ctx: Context, player: Player, changes: list[tuple[str, str]], tz: tzinfo
+) -> list[dict]:
+    """The player's status changes, newest first, with the games his team
+    played in each injured spell that he has no box score for."""
+    played = {g.sp for g in player.games}
+    games = ctx.calendar.by_team.get(player.pro_team_id, []) if player.pro_team_id else []
+    rows = []
+    until = ctx.now
+    for status, since in changes[:HISTORY_ROWS]:
+        start = (
+            parse_iso(since) if "T" in since else datetime.fromisoformat(since).replace(tzinfo=UTC)
+        )
+        missed = None
+        if status not in ("ACTIVE", "NORMAL"):
+            missed = sum(
+                1
+                for g in games
+                if start <= parse_iso(g.start) < min(until, ctx.now) and g.sp not in played
+            )
+        rows.append(
+            {
+                "status": HEALTH_LABELS.get(status, status),
+                "since": start.astimezone(tz).date().isoformat(),
+                "missed": missed,
+            }
+        )
+        until = start
+    return rows
 
 
 def _card(

@@ -36,6 +36,15 @@ CREATE TABLE IF NOT EXISTS forecasts (
 );
 -- Final results of my finished matchups (WIN / LOSS / TIE), cat '*' for
 -- the matchup itself.
+-- Each player's injury status over time: a row whenever it changes.
+CREATE TABLE IF NOT EXISTS statuses (
+    league_id INTEGER NOT NULL,
+    season INTEGER NOT NULL,
+    player_id INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    since TEXT NOT NULL,
+    PRIMARY KEY (league_id, season, player_id, since)
+);
 CREATE TABLE IF NOT EXISTS results (
     league_id INTEGER NOT NULL,
     season INTEGER NOT NULL,
@@ -77,7 +86,67 @@ class SnapshotStore:
                     payload,
                 ),
             )
-            return int(cursor.lastrowid or 0)
+            snapshot_id = int(cursor.lastrowid or 0)
+            # Earlier days keep only their last snapshot (all the day-to-day
+            # and week comparisons need), so refreshing every few hours
+            # doesn't grow the file without end.
+            pruned = db.execute(
+                "DELETE FROM snapshots WHERE league_id = ? AND season = ? AND local_date < ? "
+                "AND id NOT IN (SELECT MAX(id) FROM snapshots WHERE league_id = ? AND season = ? "
+                "GROUP BY local_date)",
+                (
+                    snapshot.league.id,
+                    snapshot.league.season,
+                    local_day.isoformat(),
+                    snapshot.league.id,
+                    snapshot.league.season,
+                ),
+            ).rowcount
+        if pruned:
+            db = sqlite3.connect(self.path)
+            try:
+                db.execute("VACUUM")
+            finally:
+                db.close()
+        return snapshot_id
+
+    def record_statuses(self, snapshot: Snapshot) -> None:
+        """Log every tracked player's injury status when it changed."""
+        league, season = snapshot.league.id, snapshot.league.season
+        tracked = {s.player_id for t in snapshot.teams for s in t.roster} | set(
+            snapshot.free_agent_ids
+        )
+        with self._connect() as db:
+            last = {
+                pid: status
+                for pid, status, _ in db.execute(
+                    "SELECT player_id, status, MAX(since) FROM statuses "
+                    "WHERE league_id = ? AND season = ? GROUP BY player_id",
+                    (league, season),
+                )
+            }
+            rows = []
+            for pid in tracked:
+                player = snapshot.players.get(pid)
+                if player is None or last.get(pid) == player.injury_status:
+                    continue
+                since = snapshot.fetched_at
+                if pid not in last and player.injury_status not in ("ACTIVE", "NORMAL"):
+                    since = player.injury_date or since  # first sighting: ESPN's date
+                rows.append((league, season, pid, player.injury_status, since))
+            db.executemany("INSERT OR REPLACE INTO statuses VALUES (?, ?, ?, ?, ?)", rows)
+
+    def status_history(self, league_id: int, season: int) -> dict[int, list[tuple[str, str]]]:
+        """Player id -> [(status, since), ...], newest first."""
+        history: dict[int, list[tuple[str, str]]] = {}
+        with self._connect() as db:
+            for pid, status, since in db.execute(
+                "SELECT player_id, status, since FROM statuses WHERE league_id = ? AND season = ? "
+                "ORDER BY since DESC",
+                (league_id, season),
+            ):
+                history.setdefault(pid, []).append((status, since))
+        return history
 
     def _one(self, where: str, args: tuple[object, ...]) -> Snapshot | None:
         with self._connect() as db:
@@ -109,7 +178,7 @@ class SnapshotStore:
 
     def clear(self) -> None:
         with self._connect() as db:
-            for table in ("snapshots", "forecasts", "results"):
+            for table in ("snapshots", "forecasts", "results", "statuses"):
                 db.execute(f"DELETE FROM {table}")
 
     def record_forecast(self, snapshot: Snapshot, period: int, odds: dict[str, float]) -> None:

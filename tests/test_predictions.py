@@ -393,3 +393,28 @@ def test_category_odds_favour_the_stronger_side():
     assert _cat_odds(weak, strong, 33, "PTS") == pytest.approx(
         1 - _cat_odds(strong, weak, 33, "PTS")
     )
+
+
+def test_card_history_counts_games_missed_while_out(today):
+    import copy
+
+    from fantasy.analysis.cards import status_history
+    from fantasy.timeutil import parse_iso
+    from tests.conftest import RIGA
+
+    snap = copy.deepcopy(today)
+    ctx = Context.build(snap)
+    player = next(p for p in snap.players.values() if p.games and p.pro_team_id)
+    first_game = min(
+        (g for g in ctx.calendar.by_team[player.pro_team_id] if parse_iso(g.start) < ctx.now),
+        key=lambda g: g.start,
+    )
+    player.games = []  # no box scores since: every team game was missed
+    since = parse_iso(first_game.start).isoformat()
+    rows = status_history(ctx, player, [("OUT", since)], RIGA)
+    team_games = sum(
+        1
+        for g in ctx.calendar.by_team[player.pro_team_id]
+        if parse_iso(first_game.start) <= parse_iso(g.start) < ctx.now
+    )
+    assert rows == [{"status": "OUT", "since": rows[0]["since"], "missed": team_games}]

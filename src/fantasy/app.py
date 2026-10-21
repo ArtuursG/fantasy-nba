@@ -52,6 +52,7 @@ class FantasyApp:
         day = local_date(snapshot.fetched_at, self.config.tz)
         self.store.save(snapshot, day)
         self.store.record_results(snapshot)
+        self.store.record_statuses(snapshot)
         matchup = build_view(snapshot, None, None, self.config.tz, punt=self.config.punt)["matchup"]
         if matchup:
             odds = {row["cat"]: row["p_win"] for row in matchup["projected"]}
@@ -109,6 +110,7 @@ class FantasyApp:
             self.store.on_or_before(snapshot, day - timedelta(days=7)),
             self.config.tz,
             punt=self.config.punt,
+            status_history=self.store.status_history(snapshot.league.id, snapshot.league.season),
         )
         forecasts, results = self.store.forecast_history(snapshot.league.id, snapshot.league.season)
         view["accuracy"] = forecast_accuracy(forecasts, results)

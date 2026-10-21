@@ -39,3 +39,36 @@ def test_store_finds_yesterday_and_last_week(tmp_path, snapshots):
 
     store.clear()
     assert store.latest() is None
+
+
+def test_earlier_days_keep_only_their_last_snapshot(tmp_path, snapshots):
+    week, yesterday, today = snapshots
+    store = SnapshotStore(tmp_path / "fantasy.db")
+    store.save(yesterday, date(2026, 10, 14))
+    store.save(yesterday, date(2026, 10, 14))
+    store.save(today, date(2026, 10, 15))
+    store.save(today, date(2026, 10, 15))
+    assert store.count() == 3  # one for the 14th, both of today's
+    assert store.latest_before(today, date(2026, 10, 15)).fetched_at == yesterday.fetched_at
+
+
+def test_status_log_records_only_changes(tmp_path, snapshots):
+    import copy
+
+    week, yesterday, today = snapshots
+    store = SnapshotStore(tmp_path / "fantasy.db")
+    store.record_statuses(yesterday)
+    store.record_statuses(yesterday)
+    later = copy.deepcopy(today)
+    pid = later.teams[0].roster[0].player_id
+    later.players[pid].injury_status = "OUT"
+    store.record_statuses(later)
+    history = store.status_history(later.league.id, later.league.season)
+    assert history[pid][0] == ("OUT", later.fetched_at)
+    assert len(history[pid]) == 2
+    unchanged = next(
+        p
+        for p, rows in history.items()
+        if p != pid and today.players[p].injury_status == yesterday.players[p].injury_status
+    )
+    assert len(history[unchanged]) == 1

@@ -387,6 +387,7 @@ def build_view(
     week_ago: Snapshot | None = None,
     tz: ZoneInfo | None = None,
     punt: tuple[str, ...] = (),
+    status_history: dict[int, list[tuple[str, str]]] | None = None,
 ) -> dict:
     tz = tz or ZoneInfo("Europe/Riga")
     ctx = Context.build(snap, punt)
@@ -561,7 +562,7 @@ def build_view(
         ],
         "transactions": _transactions(ctx, prev),
         "pickups": _pickups(ctx, opp_id, prev),
-        "player_cards": player_cards(ctx, ranking_rows),
+        "player_cards": player_cards(ctx, ranking_rows, status_history or {}, tz),
         "season_outlook": season_outlook(
             ctx,
             {r["cat"]: r["p_win"] for r in matchup["projected"]} if matchup else None,

@@ -533,6 +533,11 @@ function openPlayer(pid) {
       c.playoff_games !== null && c.playoff_games !== undefined ? stat("Playoff-week games", String(c.playoff_games)) : null
     ),
     c.games.length ? [h("h3", {}, "Minutes, last " + c.games.length + " games"), sparkline(c.games.map((g) => g.min).reverse())] : null,
+    c.history && c.history.length > 1 || (c.history && c.history.length && c.history[0].status !== "Healthy")
+      ? [h("h3", {}, "Status history"), h("ul", { class: "plain history" }, c.history.map((row) => h("li", {},
+          tag(row.status, row.status === "Healthy" ? "good" : row.status.startsWith("OUT") ? "bad" : "warn"),
+          ` since ${row.since}`, row.missed ? h("span", { class: "muted" }, ` · ${row.missed} game${row.missed === 1 ? "" : "s"} missed`) : null)))]
+      : null,
     h("h3", {}, "This week"),
     c.week.length ? h("div", { class: "chips" }, c.week.map((g) => h("span", { class: "chip" }, `${g.day} ${g.vs}`))) : h("p", { class: "muted" }, "No games left this matchup."),
     splitRows.length ? [h("h3", {}, "Per game"), table(["Period", "G", "MIN", "PTS", "REB", "AST", "3PM", "STL", "BLK", "TO", "FG%", "FT%"], splitRows, { textCols: [0] })] : null,
