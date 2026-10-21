@@ -209,6 +209,19 @@ def fetch_bundle(
     raw["league"] = league
     sp = int(league.get("scoringPeriodId") or 1)
 
+    log("live matchup scores")
+    period = int((league.get("status") or {}).get("currentMatchupPeriod") or 0)
+    try:
+        # What ESPN's own scoreboard asks for: the general league response
+        # can lag behind on the current week's category totals.
+        raw["scoreboard"] = client.league(
+            ["mMatchupScore", "mScoreboard"],
+            params={"scoringPeriodId": sp},
+            filters={"schedule": {"filterMatchupPeriodIds": {"value": [period]}}},
+        )
+    except EspnError as exc:
+        raw["warnings"].append(f"Live matchup scores unavailable: {exc}")
+
     log("NBA schedule")
     raw["pro_schedule"] = client.season_view("proTeamSchedules_wl")
 

@@ -117,6 +117,15 @@ def main(argv: list[str] | None = None) -> int:
             text = app.report(compact=args.compact) or ""
             day = local_date(snapshot.fetched_at, config.tz).isoformat()
             _write(text, args.out or config.data_dir / "reports" / f"{day}.md")
+            view = app.view() or {}
+            if view.get("matchup"):
+                score = view["matchup"]["score_now"]
+                print(
+                    f"Matchup {view['matchup']['period']} score now: "
+                    f"{score['wins']}-{score['losses']}-{score['ties']}"
+                )
+            for warning in snapshot.warnings:
+                print(f"Warning: {warning}", file=sys.stderr)
             if args.summary:
                 with args.summary.open("a", encoding="utf-8") as summary:
                     summary.write(

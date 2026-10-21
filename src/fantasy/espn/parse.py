@@ -117,7 +117,10 @@ def parse_bundle(raw: dict[str, Any], team_hint: str | None, demo: bool = False)
         teams=teams,
         players=players,
         free_agent_ids=free_agent_ids,
-        matchups=parse_matchups(league_raw, league.matchup_period, around=1),
+        matchups=merge_live_scores(
+            parse_matchups(league_raw, league.matchup_period, around=1),
+            parse_matchups(raw.get("scoreboard") or {}, league.matchup_period),
+        ),
         transactions=transactions,
         pro_games=pro_games,
         pro_teams=pro_teams,
@@ -466,6 +469,12 @@ def parse_matchups(raw: dict[str, Any], period: int, around: int = 0) -> list[Ma
             )
         )
     return matchups
+
+
+def merge_live_scores(matchups: list[Matchup], live: list[Matchup]) -> list[Matchup]:
+    """The scoreboard's current-week scores replace the league response's."""
+    by_pair = {(m.period, m.home.team_id): m for m in live}
+    return [by_pair.get((m.period, m.home.team_id), m) for m in matchups]
 
 
 def parse_transactions(responses: list[Any]) -> list[Transaction]:

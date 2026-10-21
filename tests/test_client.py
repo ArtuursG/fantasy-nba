@@ -34,6 +34,10 @@ def _serve_demo(raw: dict, calls: list):
             return httpx.Response(200, json=raw["transactions"][0])
         if "mTeam" in views:
             return httpx.Response(200, json=raw["league"])
+        if "mScoreboard" in views:
+            period = filters["schedule"]["filterMatchupPeriodIds"]["value"][0]
+            schedule = [m for m in raw["league"]["schedule"] if m["matchupPeriodId"] == period]
+            return httpx.Response(200, json={"schedule": schedule})
         return httpx.Response(404)
 
     return httpx.MockTransport(handler)
@@ -51,6 +55,10 @@ def test_fetch_bundle_makes_the_expected_requests(raw_today):
     assert league_call[0] == "/apis/v3/games/fba/seasons/2027/segments/0/leagues/424242"
     assert {"mTeam", "mRoster", "mSettings", "mMatchupScore"} <= set(league_call[1])
     assert "espn_s2=s2cookie" in league_call[3] and "SWID={SWID}" in league_call[3]
+
+    board = next(c for c in calls if "mScoreboard" in c[1] and "mTeam" not in c[1])
+    assert board[2]["schedule"]["filterMatchupPeriodIds"]["value"]
+    assert raw["scoreboard"]["schedule"] and not raw["warnings"]
 
     card_calls = [c for c in calls if "kona_playercard" in c[1]]
     requested = [i for c in card_calls for i in c[2]["players"]["filterIds"]["value"]]
@@ -102,3 +110,27 @@ def test_optional_requests_fail_softly(raw_today):
     raw = fetch_bundle(client)
     assert "injuries" not in raw
     assert raw["warnings"] and "Injury notes" in raw["warnings"][0]
+
+
+def test_live_scoreboard_scores_win_over_the_league_response(raw_today):
+    import copy
+
+    from fantasy.espn.parse import parse_bundle
+
+    raw = copy.deepcopy(raw_today)
+    period = raw["league"]["status"]["currentMatchupPeriod"]
+    live = copy.deepcopy([m for m in raw["league"]["schedule"] if m["matchupPeriodId"] == period])
+    live[0]["home"]["cumulativeScore"] = {
+        "wins": 8,
+        "losses": 1,
+        "ties": 0,
+        "scoreByStat": {"0": {"score": 86, "result": "WIN"}},
+    }
+    raw["scoreboard"] = {"schedule": live}
+    snap = parse_bundle(raw, "Home Team")
+    home = next(
+        m.home
+        for m in snap.matchups
+        if m.period == period and m.home.team_id == live[0]["home"]["teamId"]
+    )
+    assert (home.wins, home.losses, home.stats["PTS"]) == (8, 1, 86)
