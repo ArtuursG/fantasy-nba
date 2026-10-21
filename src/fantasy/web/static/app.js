@@ -236,6 +236,27 @@ function renderByDay(v) {
   );
 }
 
+function renderPunt(v) {
+  const pa = v.punt_analysis;
+  if (!pa) return null;
+  const rows = [...pa.rows].sort((a, b) => a.place - b.place || a.cost - b.cost).map((r) => ({
+    cls: r.current ? "mine" : null,
+    cells: [
+      { node: [r.label, r.current ? tag("Current", "solid") : null], cls: "strong" },
+      { node: "#" + r.place, cls: r.place <= 3 ? "good" : r.place >= 8 ? "bad" : "" },
+      { node: r.place_change ? (r.place_change > 0 ? "▲ " : "▼ ") + Math.abs(r.place_change) : "-", cls: r.place_change > 0 ? "good" : r.place_change < 0 ? "bad" : "muted" },
+      num(r.avg_rank, 2), r.cost ? "−" + num(r.cost, 2) : "-", num(r.expected_cats, 2),
+      r.strong.join(", ") || "-", r.weak.join(", ") || "-",
+    ],
+  }));
+  return card(
+    "Punt analysis",
+    true,
+    h("p", { class: "note" }, `Your place in the league counting only the categories you'd still play for (average category rank), and what conceding costs: the categories a week you'd expect to win in what you punt, against the average team. A good punt costs little and lifts your place. Best fit now: ${pa.best || "-"}.`),
+    table(["Punt", "Place", "Change", "Avg rank", "Cost / week", "Expected cats", "Top-3 in", "Bottom-3 in"], rows, { textCols: [0, 6, 7] })
+  );
+}
+
 function renderHabits(v) {
   const rows = v.habits;
   if (!rows || !rows.length) return null;
@@ -1353,7 +1374,7 @@ function render(view, demo) {
     matchup: [renderMatchup(view), renderTrend(view), renderByDay(view), renderTargets(view), renderWhatIf(view), renderGameCounts(view), renderWeekGrid(view), renderStrategy(view), renderAccuracy(view), renderSchedule(view), renderStreamPlan(view), renderSimulator(view), renderNextMatchup(view)],
     roster: [renderMyRoster(view), renderAdvanced(view)],
     wire: [renderPickups(view), renderHot(view), renderFreeAgents(view), renderTransactions(view), renderPopular(view)],
-    league: [renderSeasonOutlook(view), renderHabits(view), renderStrength(view), renderSeason(view), renderTrade(view), renderTeams(view)],
+    league: [renderSeasonOutlook(view), renderPunt(view), renderHabits(view), renderStrength(view), renderSeason(view), renderTrade(view), renderTeams(view)],
     rankings: [renderRankings(view)],
     report: [renderReport()],
     setup: STATIC ? [] : [renderSettings()],

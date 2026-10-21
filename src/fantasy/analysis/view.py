@@ -28,6 +28,7 @@ from fantasy.analysis.matchup import (
     team_strength,
 )
 from fantasy.analysis.planner import plan_streams
+from fantasy.analysis.punt import punt_analysis
 from fantasy.analysis.rankings import RANGES, default_range, rank_players
 from fantasy.analysis.roles import RoleInfo, all_roles, build_alerts, opportunities
 from fantasy.analysis.schedule import (
@@ -616,6 +617,7 @@ def build_view(
         "pickups": _pickups(ctx, opp_id, prev),
         "habits": _habit_rows(ctx, habits, opp_id),
         "hot_free_agents": hot_free_agents(ctx, roles, opps, strength),
+        "punt_analysis": punt_analysis(ctx, strength),
         "player_cards": player_cards(ctx, ranking_rows, status_history or {}, tz),
         "season_outlook": season_outlook(
             ctx,

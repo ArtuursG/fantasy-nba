@@ -471,3 +471,16 @@ def test_rest_of_season_games_scale_value(view, today):
     assert row["ros_factor"] == pytest.approx(games[team] / median, abs=0.001)
     card = view["player_cards"][str(row["id"])]
     assert card["ros_games"] == games[team]
+
+
+def test_punt_analysis_compares_options(view):
+    pa = view["punt_analysis"]
+    labels = [r["label"] for r in pa["rows"]]
+    assert labels[0] == "No punt" and "TO" in labels
+    assert any(" + " in label for label in labels)
+    none = pa["rows"][0]
+    assert none["cost"] == 0 and none["place_change"] == 0
+    for r in pa["rows"][1:]:
+        assert r["cost"] > 0 and r["expected_cats"] < none["expected_cats"] + 1e-9
+        assert 1 <= r["place"] <= 10
+    assert pa["best"] in labels

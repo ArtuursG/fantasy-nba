@@ -232,6 +232,7 @@ class Report:
         self.season_totals()
         self.season_outlook()
         self.habits()
+        self.punt_analysis()
         self.trade_targets()
         if not self.compact:
             self.rankings()
@@ -1174,6 +1175,36 @@ class Report:
                         r["playoff_games"] if r["playoff_games"] is not None else "-",
                     ]
                     for r in so["rows"]
+                ),
+            )
+        )
+
+    def punt_analysis(self) -> None:
+        pa = self.view.get("punt_analysis")
+        if not pa:
+            return
+        self.section("PUNT ANALYSIS")
+        self.add(
+            "My league place counting only the categories I'd still play for (average category "
+            "rank), and the cost of conceding: categories per week I'd expect to win in what I "
+            f"punt, vs the average team. Best fit now: {pa['best'] or '-'}.",
+            "",
+        )
+        rows = sorted(pa["rows"], key=lambda r: (r["place"], r["cost"]))
+        self.lines.extend(
+            table(
+                ["Punt", "Place", "Avg rank", "Cost/week", "Expected cats", "Top-3", "Bottom-3"],
+                (
+                    [
+                        r["label"] + (" (current)" if r["current"] else ""),
+                        f"#{r['place']}",
+                        f"{r['avg_rank']:.2f}",
+                        f"-{r['cost']:.2f}" if r["cost"] else "-",
+                        f"{r['expected_cats']:.2f}",
+                        ", ".join(r["strong"]) or "-",
+                        ", ".join(r["weak"]) or "-",
+                    ]
+                    for r in rows
                 ),
             )
         )
