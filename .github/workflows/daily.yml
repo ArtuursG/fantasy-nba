@@ -33,10 +33,10 @@ jobs:
         with:
           version: "latest"
       - name: Restore snapshot history
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: data
-          key: snapshots-${{ github.run_id }}
+          key: snapshots-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: snapshots-
       - run: uv sync --no-dev
       - name: Read the league and write the reports
@@ -45,14 +45,15 @@ jobs:
           uv run fantasy report --compact --out reports/compact.md
       - name: Save snapshot history
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: data
-          key: snapshots-${{ github.run_id }}
+          # A re-run gets its own key: a cache key can't be written twice.
+          key: snapshots-${{ github.run_id }}-${{ github.run_attempt }}
       # Run logs and artifacts of a public repository are public too.
       - name: Attach the reports
         if: ${{ github.event.repository.private }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fantasy-report
           path: reports/
@@ -62,7 +63,7 @@ jobs:
         run: uv run fantasy export --out site
       - name: Prepare the dashboard for GitHub Pages
         if: ${{ !github.event.repository.private }}
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: site
 
@@ -74,5 +75,5 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/deploy-pages@v4
+      - uses: actions/deploy-pages@v5
         id: deployment
