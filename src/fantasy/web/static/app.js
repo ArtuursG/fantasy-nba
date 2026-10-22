@@ -1418,11 +1418,11 @@ function renderSettings() {
 // Ready questions for ChatGPT: each copies the question plus the brief.
 const INTRO = "I play in an ESPN fantasy basketball H2H categories league. Below is today's short report from my own analytics page. Answer in Latvian.";
 const PROMPTS = [
-  ["Mačupa plāns", "Analyse my current matchup: which categories I can still win, which are better conceded, and which concrete moves (lineup, pickups, drops) raise my chance to win the most. Keep it short and name the players."],
-  ["Ko pacelt", "Which free agents should I pick up this week and whom should I drop? Take into account the games per day, my open lineup slots, my weak categories and the acquisitions I have left."],
-  ["Sastāvs šovakar", "Check my lineup and injuries for today: does anything need to change before tip-off? If everything is fine, say so in one sentence."],
-  ["Treidi", "Assess the trade ideas in the report and suggest 1-2 trades to offer, with a short argument why each also suits the other team."],
-  ["Sezonas stratēģija", "What is a good long-term strategy for my team: should I punt a category, which players to hold or move, and how to prepare for the playoff weeks?"],
+  ["Matchup plan", "Analyse my current matchup: which categories I can still win, which are better conceded, and which concrete moves (lineup, pickups, drops) raise my chance to win the most. Keep it short and name the players."],
+  ["Who to pick up", "Which free agents should I pick up this week and whom should I drop? Take into account the games per day, my open lineup slots, my weak categories and the acquisitions I have left."],
+  ["Tonight's lineup", "Check my lineup and injuries for today: does anything need to change before tip-off? If everything is fine, say so in one sentence."],
+  ["Trades", "Assess the trade ideas in the report and suggest 1-2 trades to offer, with a short argument why each also suits the other team."],
+  ["Season strategy", "What is a good long-term strategy for my team: should I punt a category, which players to hold or move, and how to prepare for the playoff weeks?"],
 ];
 let briefText = "";
 
@@ -1431,7 +1431,7 @@ let briefText = "";
 function askChatGPT(question) {
   const report = briefText || reportText;
   if (!report) {
-    askStatus("Atskaite vēl ielādējas: pamēģini pēc brīža.", "");
+    askStatus("The report is still loading: try again in a moment.", "");
     return false;
   }
   const text = `${INTRO}\n\n${question}\n\n${report}`;
@@ -1441,13 +1441,13 @@ function askChatGPT(question) {
     area.closest("details").open = true;
   }
   const label = $("brief-size");
-  if (label) label.textContent = `Nokopētais teksts: ${text.length.toLocaleString()} rakstzīmes`;
+  if (label) label.textContent = `Copied text: ${text.length.toLocaleString()} characters`;
   try {
     copyText(text).then((ok) => askStatus(ok
-      ? "Nokopēts. ChatGPT atveras jaunā cilnē: ielīmē (Ctrl+V vai turi un Ielīmēt) un sūti."
-      : "Pārlūks neļāva nokopēt: iezīmē tekstu zemāk un nokopē to pats.", ok ? "ok" : ""));
+      ? "Copied. ChatGPT opens in a new tab: paste (Ctrl+V, or press and hold, Paste) and send."
+      : "The browser blocked copying: select the text below and copy it yourself.", ok ? "ok" : ""));
   } catch (e) {
-    askStatus("Kļūda kopējot: " + e.message, "");
+    askStatus("Copying failed: " + e.message, "");
   }
   return true;
 }
@@ -1486,12 +1486,12 @@ function renderAsk() {
     });
     return link;
   });
-  const area = h("textarea", { id: "brief-text", class: "report-text short", readonly: true, spellcheck: "false", "aria-label": "Nokopētais teksts" });
+  const area = h("textarea", { id: "brief-text", class: "report-text short", readonly: true, spellcheck: "false", "aria-label": "Copied text" });
   area.value = briefText;
   return card(
-    "Jautāt ChatGPT",
+    "Ask ChatGPT",
     true,
-    h("p", { class: "note" }, "Katra poga nokopē gatavu jautājumu kopā ar īso atskaiti (tikai to, kas vajadzīgs šodienas lēmumiem, daži tūkstoši rakstzīmju, ChatGPT tas nav par daudz) un atver ChatGPT jaunā cilnē: ielīmē un sūti. Nokopētais teksts parādās zemāk. Pilnā atskaite ir dziļākai analīzei."),
+    h("p", { class: "note" }, "Each button copies a ready question together with the short report (only what today's decisions need, a few thousand characters, well within what ChatGPT reads) and opens ChatGPT in a new tab: paste and send. The copied text shows below. The full report is for a deeper look."),
     h("div", { class: "actions ask-row" }, buttons),
     h("div", { id: "ask-status", class: "status", role: "status", "aria-live": "polite" }),
     h("details", {}, h("summary", { id: "brief-size" }, briefSize()), area)
@@ -1499,7 +1499,7 @@ function renderAsk() {
 }
 
 function briefSize() {
-  return briefText ? `Īsā atskaite: ${briefText.length.toLocaleString()} rakstzīmes (parādīt)` : "Īsā atskaite: ielādējas...";
+  return briefText ? `Short report: ${briefText.length.toLocaleString()} characters (show)` : "Short report: loading...";
 }
 
 function renderReport() {
