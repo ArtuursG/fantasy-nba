@@ -1416,13 +1416,13 @@ function renderSettings() {
 }
 
 // Ready questions for ChatGPT: each copies the question plus the brief.
-const INTRO = "Esmu ESPN fantasy basketbola H2H kategoriju līgā. Zemāk ir mana šodienas īsā atskaite no manas analītikas lapas.";
+const INTRO = "I play in an ESPN fantasy basketball H2H categories league. Below is today's short report from my own analytics page. Answer in Latvian.";
 const PROMPTS = [
-  ["Mačupa plāns", "Analizē manu pašreizējo mačupu: kuras kategorijas vēl var uzvarēt, kuras labāk atdot, un kādi konkrēti gājieni (sastāvs, pacēlumi, atlaišanas) visvairāk palielinās uzvaras iespēju. Atbildi īsi, ar konkrētiem spēlētāju vārdiem."],
-  ["Ko pacelt", "Kurus brīvos spēlētājus pacelt šonedēļ un kurus atlaist? Ņem vērā spēļu skaitu pa dienām, brīvos slotus, manas vājās kategorijas un atlikušās pievienošanas."],
-  ["Sastāvs šovakar", "Pārbaudi manu šodienas sastāvu un traumas: vai kaut kas jāmaina pirms spēles sākuma? Ja viss kārtībā, saki to vienā teikumā."],
-  ["Treidi", "Novērtē treidu idejas atskaitē un iesaki 1–2 treidus, ko piedāvāt, ar īsu argumentu, kāpēc tas ir izdevīgs arī otrai komandai."],
-  ["Sezonas stratēģija", "Kāda ir laba ilgtermiņa stratēģija manai komandai: vai puntēt kādu kategoriju, kurus spēlētājus turēt vai mainīt, un kā sagatavoties playoff nedēļām?"],
+  ["Mačupa plāns", "Analyse my current matchup: which categories I can still win, which are better conceded, and which concrete moves (lineup, pickups, drops) raise my chance to win the most. Keep it short and name the players."],
+  ["Ko pacelt", "Which free agents should I pick up this week and whom should I drop? Take into account the games per day, my open lineup slots, my weak categories and the acquisitions I have left."],
+  ["Sastāvs šovakar", "Check my lineup and injuries for today: does anything need to change before tip-off? If everything is fine, say so in one sentence."],
+  ["Treidi", "Assess the trade ideas in the report and suggest 1-2 trades to offer, with a short argument why each also suits the other team."],
+  ["Sezonas stratēģija", "What is a good long-term strategy for my team: should I punt a category, which players to hold or move, and how to prepare for the playoff weeks?"],
 ];
 let briefText = "";
 
