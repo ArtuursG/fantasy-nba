@@ -1426,13 +1426,12 @@ const PROMPTS = [
 ];
 let briefText = "";
 
-// Each button is a plain link to ChatGPT, so the new tab opens even where
-// a script may not open one; the click copies the text on the way.
-function askChatGPT(question) {
+// Copies the question and the brief; nothing opens, paste it wherever.
+function copyPrompt(question) {
   const report = briefText || reportText;
   if (!report) {
     askStatus("The report is still loading: try again in a moment.", "");
-    return false;
+    return;
   }
   const text = `${INTRO}\n\n${question}\n\n${report}`;
   const area = $("brief-text");
@@ -1444,12 +1443,11 @@ function askChatGPT(question) {
   if (label) label.textContent = `Copied text: ${text.length.toLocaleString()} characters`;
   try {
     copyText(text).then((ok) => askStatus(ok
-      ? "Copied. ChatGPT opens in a new tab: paste (Ctrl+V, or press and hold, Paste) and send."
+      ? `Copied (${text.length.toLocaleString()} characters): paste it into ChatGPT and send.`
       : "The browser blocked copying: select the text below and copy it yourself.", ok ? "ok" : ""));
   } catch (e) {
     askStatus("Copying failed: " + e.message, "");
   }
-  return true;
 }
 
 function askStatus(text, kind) {
@@ -1480,18 +1478,16 @@ function copyText(text) {
 
 function renderAsk() {
   const buttons = PROMPTS.map(([label, question]) => {
-    const link = h("a", { class: "button ask", href: "https://chatgpt.com/", target: "_blank", rel: "noopener" }, label);
-    link.addEventListener("click", (event) => {
-      if (!askChatGPT(question)) event.preventDefault();
-    });
-    return link;
+    const b = h("button", { type: "button", class: "ask" }, label);
+    b.addEventListener("click", () => copyPrompt(question));
+    return b;
   });
   const area = h("textarea", { id: "brief-text", class: "report-text short", readonly: true, spellcheck: "false", "aria-label": "Copied text" });
   area.value = briefText;
   return card(
-    "Ask ChatGPT",
+    "Questions for ChatGPT",
     true,
-    h("p", { class: "note" }, "Each button copies a ready question together with the short report (only what today's decisions need, a few thousand characters, well within what ChatGPT reads) and opens ChatGPT in a new tab: paste and send. The copied text shows below. The full report is for a deeper look."),
+    h("p", { class: "note" }, "Each button copies a ready question together with the short report (only what today's decisions need, a few thousand characters, well within what ChatGPT reads) to the clipboard: paste it into ChatGPT and send. The copied text shows below. The full report is for a deeper look."),
     h("div", { class: "actions ask-row" }, buttons),
     h("div", { id: "ask-status", class: "status", role: "status", "aria-live": "polite" }),
     h("details", {}, h("summary", { id: "brief-size" }, briefSize()), area)
