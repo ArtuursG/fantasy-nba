@@ -1426,27 +1426,38 @@ const PROMPTS = [
 ];
 let briefText = "";
 
-// Copies and opens ChatGPT straight from the click: Safari blocks a new
-// tab, and may drop the copy, once anything has been awaited first.
+// Each button is a plain link to ChatGPT, so the new tab opens even where
+// a script may not open one; the click copies the text on the way.
 function askChatGPT(question) {
-  if (!briefText) {
-    setStatus("The short report is still loading: try again in a moment.");
-    return;
+  const report = briefText || reportText;
+  if (!report) {
+    askStatus("Atskaite vēl ielādējas: pamēģini pēc brīža.", "");
+    return false;
   }
-  const text = `${INTRO}\n\n${question}\n\n${briefText}`;
-  copyText(text).then((ok) => {
-    setStatus(ok
-      ? "Question and brief copied: paste them into ChatGPT (opened in a new tab) and send."
-      : "Copying was blocked: the text is shown below, select it and copy it by hand.", ok ? "ok" : "");
-  });
+  const text = `${INTRO}\n\n${question}\n\n${report}`;
   const area = $("brief-text");
   if (area) {
     area.value = text;
     area.closest("details").open = true;
   }
   const label = $("brief-size");
-  if (label) label.textContent = `Copied: ${text.length.toLocaleString()} characters`;
-  window.open("https://chatgpt.com/", "_blank", "noopener");
+  if (label) label.textContent = `Nokopētais teksts: ${text.length.toLocaleString()} rakstzīmes`;
+  try {
+    copyText(text).then((ok) => askStatus(ok
+      ? "Nokopēts. ChatGPT atveras jaunā cilnē: ielīmē (Ctrl+V vai turi un Ielīmēt) un sūti."
+      : "Pārlūks neļāva nokopēt: iezīmē tekstu zemāk un nokopē to pats.", ok ? "ok" : ""));
+  } catch (e) {
+    askStatus("Kļūda kopējot: " + e.message, "");
+  }
+  return true;
+}
+
+function askStatus(text, kind) {
+  const el = $("ask-status");
+  if (el) {
+    el.textContent = text;
+    el.className = "status" + (kind ? " " + kind : "");
+  }
 }
 
 // Must be called from the click itself; resolves to whether it worked.
@@ -1469,23 +1480,26 @@ function copyText(text) {
 
 function renderAsk() {
   const buttons = PROMPTS.map(([label, question]) => {
-    const b = h("button", { type: "button", class: "ask" }, label);
-    b.addEventListener("click", () => askChatGPT(question));
-    return b;
+    const link = h("a", { class: "button ask", href: "https://chatgpt.com/", target: "_blank", rel: "noopener" }, label);
+    link.addEventListener("click", (event) => {
+      if (!askChatGPT(question)) event.preventDefault();
+    });
+    return link;
   });
-  const area = h("textarea", { id: "brief-text", class: "report-text short", readonly: true, spellcheck: "false", "aria-label": "Brief report text" });
+  const area = h("textarea", { id: "brief-text", class: "report-text short", readonly: true, spellcheck: "false", "aria-label": "Nokopētais teksts" });
   area.value = briefText;
   return card(
-    "Ask ChatGPT",
+    "Jautāt ChatGPT",
     true,
-    h("p", { class: "note" }, "Each button copies a ready question together with the short report (only what today's decisions need, a few thousand characters, well within what ChatGPT reads) and opens ChatGPT in a new tab: paste and send. The copied text shows below. The full report is for a deeper look."),
+    h("p", { class: "note" }, "Katra poga nokopē gatavu jautājumu kopā ar īso atskaiti (tikai to, kas vajadzīgs šodienas lēmumiem, daži tūkstoši rakstzīmju, ChatGPT tas nav par daudz) un atver ChatGPT jaunā cilnē: ielīmē un sūti. Nokopētais teksts parādās zemāk. Pilnā atskaite ir dziļākai analīzei."),
     h("div", { class: "actions ask-row" }, buttons),
+    h("div", { id: "ask-status", class: "status", role: "status", "aria-live": "polite" }),
     h("details", {}, h("summary", { id: "brief-size" }, briefSize()), area)
   );
 }
 
 function briefSize() {
-  return briefText ? `Short report: ${briefText.length.toLocaleString()} characters (show)` : "Short report: loading...";
+  return briefText ? `Īsā atskaite: ${briefText.length.toLocaleString()} rakstzīmes (parādīt)` : "Īsā atskaite: ielādējas...";
 }
 
 function renderReport() {
