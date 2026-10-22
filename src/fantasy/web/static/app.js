@@ -1426,21 +1426,45 @@ const PROMPTS = [
 ];
 let briefText = "";
 
-async function askChatGPT(question) {
-  if (!briefText) return;
-  const text = `${INTRO}\n\n${question}\n\n${briefText}`;
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    const area = h("textarea", { style: "position:fixed;left:-9999px;top:0", readonly: true });
-    area.value = text;
-    document.body.append(area);
-    area.select();
-    document.execCommand("copy");
-    area.remove();
+// Copies and opens ChatGPT straight from the click: Safari blocks a new
+// tab, and may drop the copy, once anything has been awaited first.
+function askChatGPT(question) {
+  if (!briefText) {
+    setStatus("The short report is still loading: try again in a moment.");
+    return;
   }
-  setStatus("Question and brief copied: paste them into ChatGPT (it opens in a new tab).", "ok");
+  const text = `${INTRO}\n\n${question}\n\n${briefText}`;
+  copyText(text).then((ok) => {
+    setStatus(ok
+      ? "Question and brief copied: paste them into ChatGPT (opened in a new tab) and send."
+      : "Copying was blocked: the text is shown below, select it and copy it by hand.", ok ? "ok" : "");
+  });
+  const area = $("brief-text");
+  if (area) {
+    area.value = text;
+    area.closest("details").open = true;
+  }
+  const label = $("brief-size");
+  if (label) label.textContent = `Copied: ${text.length.toLocaleString()} characters`;
   window.open("https://chatgpt.com/", "_blank", "noopener");
+}
+
+// Must be called from the click itself; resolves to whether it worked.
+function copyText(text) {
+  const area = h("textarea", { style: "position:fixed;left:-9999px;top:0" });
+  area.value = text;
+  document.body.append(area);
+  area.select();
+  area.setSelectionRange(0, text.length);
+  let ok = false;
+  try {
+    ok = document.execCommand("copy");
+  } catch {
+    ok = false;
+  }
+  area.remove();
+  if (ok || !navigator.clipboard) return Promise.resolve(ok);
+  return navigator.clipboard.writeText(text).then(() => true, () => false);
 }
 
 function renderAsk() {
@@ -1454,7 +1478,7 @@ function renderAsk() {
   return card(
     "Ask ChatGPT",
     true,
-    h("p", { class: "note" }, "Each button copies a ready question together with the short report (only what today's decisions need) and opens ChatGPT: paste and send. The full report below is for a deeper look."),
+    h("p", { class: "note" }, "Each button copies a ready question together with the short report (only what today's decisions need, a few thousand characters, well within what ChatGPT reads) and opens ChatGPT in a new tab: paste and send. The copied text shows below. The full report is for a deeper look."),
     h("div", { class: "actions ask-row" }, buttons),
     h("details", {}, h("summary", { id: "brief-size" }, briefSize()), area)
   );
@@ -1637,20 +1661,13 @@ async function refresh() {
   }
 }
 
-async function copyReport() {
+function copyReport() {
   if (!reportText) return;
-  try {
-    await navigator.clipboard.writeText(reportText);
-  } catch {
-    // Older browsers or a denied permission: copy through a hidden textarea.
-    const area = h("textarea", { style: "position:fixed;left:-9999px;top:0", readonly: true });
-    area.value = reportText;
-    document.body.append(area);
-    area.select();
-    document.execCommand("copy");
-    area.remove();
-  }
-  setStatus(`Report copied (${reportText.length.toLocaleString()} characters). Paste it into ChatGPT.`, "ok");
+  copyText(reportText).then((ok) => {
+    setStatus(ok
+      ? `Report copied (${reportText.length.toLocaleString()} characters). Paste it into ChatGPT.`
+      : "Copying was blocked: use Download .md or copy the text from the Report tab.", ok ? "ok" : "");
+  });
 }
 
 window.addEventListener("hashchange", () => showTab(currentTab()));
