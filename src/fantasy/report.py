@@ -1614,7 +1614,7 @@ class Report:
             f"Range: {label} | top {RANKING_ROUNDS} rounds ({RANKING_ROUNDS * teams} players) by "
             + ("punt value" if punt else "value")
             + ". Values are per-game z-scores against the rostered players (about +1 for a "
-            "first-rounder, 0 at the edge of rosterable)."
+            "first-rounder, 0 an average rostered player in this league)."
             + (
                 f" Punting {', '.join(punt)}: Value leaves it out, LeagV counts it." if punt else ""
             ),
@@ -1800,7 +1800,7 @@ class Report:
             "- Roster % and its change are across all ESPN leagues.",
             "- Value: average per-game z-score against the rostered players, percentages "
             "weighted by attempts and turnovers counted against; about +1 is a first-round "
-            "player, 0 the edge of rosterable. Rank is by value in the PLAYER RANKINGS range; "
+            "player, 0 an average rostered player. Rank is by value in the PLAYER RANKINGS range; "
             "L15 Value uses the last 15 days.",
             "- Matchup win chance: categories treated as independent (they're not quite: a big "
             "night lifts several at once), so read it as a guide. Category wins are counted, so "

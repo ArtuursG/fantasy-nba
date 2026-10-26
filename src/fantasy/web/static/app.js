@@ -1184,7 +1184,7 @@ function renderFreeAgents(v) {
   return card(
     "Free agents",
     true,
-    h("p", { class: "note" }, "Sorted by how interesting they are right now (minutes, role, schedule, adds), not by ESPN rank. * = ESPN projection."),
+    h("p", { class: "note" }, "Sorted by the model: value of the stat line, how widely he is rostered across ESPN (Ros%), role, minutes, form and a little for this week's games. ESPN's own list sorts by Ros%: click that column to see it that way. St: FA, or WA (on waivers). * = ESPN projection."),
     table(["#", "Player", "Team", "Pos", "St", "Health", "Ros%", "+/-", "Proj MIN", "Last 5 MIN", "Starts", "Trend", "FG%", "FT%", ...STATS.map(([l]) => l), "Usable", "Why", ""], rows, { textCols: [1, 2, 3, 4, 5, 22], wrapCols: [22] })
   );
 }
@@ -1193,7 +1193,7 @@ function renderPopular(v) {
   return card(
     "Most rostered FAs",
     false,
-    table(["Player", "Team", "Pos", "Health", "Ros%", "+/-"], v.popular_free_agents.map((r) => ({ cells: [r.name, r.pro_team, r.positions, r.health, num(r.roster_pct), signed(r.roster_pct_change)] })), { textCols: [0, 1, 2, 3] })
+    table(["Player", "Team", "Pos", "St", "Health", "Ros%", "+/-"], v.popular_free_agents.map((r) => ({ cells: [r.name, r.pro_team, r.positions, r.waivers ? "WA" : "FA", r.health, num(r.roster_pct), signed(r.roster_pct_change)] })), { textCols: [0, 1, 2, 3, 4] })
   );
 }
 
@@ -1276,7 +1276,7 @@ function renderStrength(v) {
   return card(
     "Category strength",
     true,
-    h("p", { class: "note" }, "Projected per game from each roster. Rank 1 is best; hover a rank for the value."),
+    h("p", { class: "note" }, "Projected per game from each roster's best healthy players, as many as there are starting slots (only starters count). Rank 1 is best; hover a rank for the value."),
     table(["Team", ...cats, "Avg"], rows, { textCols: [0] })
   );
 }
@@ -1383,7 +1383,7 @@ function renderRankings(view) {
     controls,
     puntRow,
     body,
-    h("p", { class: "note" }, "ROS G: the player's NBA team's regular-season games still to play; ROS val: Value scaled by those games against a typical team (more games, more value). Values are per-game z-scores against the rostered players (about +1 first round, 0 the edge of rosterable). Value leaves out punted categories; LeagV counts all. USG~ is a usage proxy: (FGA + 0.44 FTA + TO) per 36 minutes. Owner: ME, OPP, team abbreviation, FA or WA.")
+    h("p", { class: "note" }, "ROS G: the player's NBA team's regular-season games still to play; ROS val: Value scaled by those games against a typical team (more games, more value). Values are per-game z-scores against the rostered players (about +1 first round, 0 an average rostered player in this league). Value leaves out punted categories; LeagV counts all. USG~ is a usage proxy: (FGA + 0.44 FTA + TO) per 36 minutes. Owner: ME, OPP, team abbreviation, FA or WA.")
   );
 }
 

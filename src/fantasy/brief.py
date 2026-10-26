@@ -59,7 +59,8 @@ def render_brief(view: dict) -> str:
             [
                 f"- Lineup: {rules.get('lineup', '-')}; at most {rules.get('c_limit', '-')} "
                 "C-eligible starters. Acquisitions: "
-                f"{acq.get('used', '-')}/{rules.get('acquisition_limit') or '-'} used this matchup. "
+                f"{acq.get('used', '-')}/{rules.get('acquisition_limit') or '-'} used this "
+                "matchup. "
                 f"Waivers: {rules.get('waiver_days', '-')} day(s).",
             ]
         )
@@ -244,13 +245,7 @@ def _opponent(view: dict, add) -> None:
     standing = next((r for r in view.get("season_standings") or [] if r["is_opp"]), None)
     if standing:
         ranks = standing["ranks"]
-        add(
-            [
-                f"- Season category ranks: "
-                + ", ".join(f"{c} {ranks[c]}" for c in ranks)
-                + "."
-            ]
-        )
+        add(["- Season category ranks: " + ", ".join(f"{c} {ranks[c]}" for c in ranks) + "."])
     habit = next((h for h in view.get("habits") or [] if h["is_opp"]), None)
     moves = next((t for t in view.get("pickups") or [] if t["is_opp"]), None)
     acq = (moves or {}).get("acquisitions") or opp.get("acquisitions") or {}
@@ -293,7 +288,8 @@ def _roster(view: dict, add) -> None:
             "## MY ROSTER",
             "Per game: the model's line (season blended with ESPN's projection). "
             "Games = this matchup left/usable. Value = average z-score per category "
-            f"(0 = edge of a rosterable player); # = rank among all players over {period}.",
+            f"(0 = an average rostered player in this league); # = rank among all players "
+            f"({period}).",
         ]
     )
     add(
@@ -330,8 +326,18 @@ def _free_agents(view: dict, add) -> None:
         )
         add(
             table(
-                ["Player", "Avail.", "Status", "Role", "Games", "GP", "Per game", "%ROST", "Value",
-                 "Notes"],
+                [
+                    "Player",
+                    "Avail.",
+                    "Status",
+                    "Role",
+                    "Games",
+                    "GP",
+                    "Per game",
+                    "%ROST",
+                    "Value",
+                    "Notes",
+                ],
                 (
                     [
                         f"{r['name']} {r['positions']} {r['pro_team']}",
@@ -349,11 +355,25 @@ def _free_agents(view: dict, add) -> None:
                 ),
             )
         )
+    popular = view.get("popular_free_agents") or []
+    if popular:
+        add(
+            [
+                "",
+                "Most rostered free agents across ESPN (the market's view): "
+                + "; ".join(
+                    f"{p['name']} {p['pro_team']} {p['roster_pct']:.0f}%"
+                    + (" WA" if p.get("waivers") else "")
+                    + (f" {p['health']}" if p["health"] not in ("Healthy", None) else "")
+                    for p in popular
+                    if p.get("roster_pct") is not None
+                ),
+            ]
+        )
     streamers = view.get("streamers") or []
     if streamers:
         add(
             [
-                "",
                 "Streaming options this matchup (games on days I have an open slot): "
                 + "; ".join(
                     f"{r['name']} {r['pro_team']} {len(r.get('usable_days') or [])} "
@@ -373,8 +393,7 @@ def _free_agents(view: dict, add) -> None:
                 [
                     f"- Add {mv['add']} ({mv['add_team']}), drop {mv['drop']}: "
                     f"{signed(mv['p_win_change'] * 100, 0)} pts to "
-                    f"{mv['p_win_after'] * 100:.0f}%"
-                    + (f"; {cats}" if cats else "")
+                    f"{mv['p_win_after'] * 100:.0f}%" + (f"; {cats}" if cats else "")
                 ]
             )
     hot = view.get("hot_free_agents") or []
@@ -404,10 +423,7 @@ def _trades(view: dict, add) -> None:
             strong = [c for c in cats if r["ranks"][c] <= 3]
             weak = [c for c in cats if r["ranks"][c] >= 8]
             add(
-                [
-                    f"- {_label(r)}: strong {', '.join(strong) or '-'}; "
-                    f"weak {', '.join(weak) or '-'}"
-                ]
+                [f"- {_label(r)}: strong {', '.join(strong) or '-'}; weak {', '.join(weak) or '-'}"]
             )
     targets = tt.get("need_targets") or []
     if targets:
@@ -444,9 +460,7 @@ def _next_matchup(view: dict, add) -> None:
         f"{nm['outlook']['p_win_matchup'] * 100:.0f}%"
     )
     if games:
-        line += (
-            f"; games scheduled me {games['me']['scheduled']}, them {games['opp']['scheduled']}"
-        )
+        line += f"; games scheduled me {games['me']['scheduled']}, them {games['opp']['scheduled']}"
     add(["", line + "."])
     if ranks:
         add(
@@ -477,9 +491,7 @@ def _season(view: dict, add) -> None:
             [
                 "Punt options (my place by average rank in the categories kept; cost = "
                 "categories a week given up): "
-                + "; ".join(
-                    f"{r['label']}: place {r['place']}, cost {r['cost']:.2f}" for r in rows
-                )
+                + "; ".join(f"{r['label']}: place {r['place']}, cost {r['cost']:.2f}" for r in rows)
             ]
         )
 
@@ -491,7 +503,9 @@ def _activity(view: dict, add) -> None:
             [
                 "",
                 "## LEAGUE ACTIVITY (7 days, adds): "
-                + "; ".join(f"{t['team']}: {', '.join(a['name'] for a in t['adds'])}" for t in others),
+                + "; ".join(
+                    f"{t['team']}: {', '.join(a['name'] for a in t['adds'])}" for t in others
+                ),
             ]
         )
     recap = view.get("recap")

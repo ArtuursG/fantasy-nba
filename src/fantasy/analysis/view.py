@@ -637,6 +637,7 @@ def build_view(
                 "health": HEALTH_LABELS.get(
                     snap.players[pid].injury_status, snap.players[pid].injury_status
                 ),
+                "waivers": snap.players[pid].pool_status == "WAIVERS",
             }
             for pid in sorted(
                 snap.free_agent_ids,
@@ -718,9 +719,7 @@ def _season_standings(ctx: Context) -> list[dict] | None:
                 "avg_rank": round(sum(ranks[t.id].values()) / max(len(ranks[t.id]), 1), 1),
             }
         )
-    return sorted(
-        rows, key=lambda r: (r["seed"] or 99, -r["pct"], r["avg_rank"])
-    )
+    return sorted(rows, key=lambda r: (r["seed"] or 99, -r["pct"], r["avg_rank"]))
 
 
 def _lineup_text(slots: dict[int, int]) -> str:

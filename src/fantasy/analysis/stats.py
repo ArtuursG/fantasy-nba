@@ -151,7 +151,7 @@ class Valuation:
         return sum(scores[c] for c in counted)
 
     def mean(self, line: StatLine, punt: tuple[str, ...] = ()) -> float:
-        """Average z-score per category: about +1 for a first-round player,
-        0 at the edge of the rosterable pool."""
+        """Average z-score per category against the rostered players: about
+        +1 for a first-round player, 0 for an average rostered one."""
         counted = [c for c in self.params if c not in punt]
         return self.score(line, punt) / len(counted) if counted else 0.0
