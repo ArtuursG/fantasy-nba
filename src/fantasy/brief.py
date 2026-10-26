@@ -189,6 +189,8 @@ def _situation(view: dict, add) -> None:
         return sum(max(z.get(c, 0.0), 0.0) for c in needs)
 
     long_term = sorted(pool, key=lambda r: (r["value"], r.get("roster_pct") or 0), reverse=True)
+    c_limit = (m.get("rules") or {}).get("c_limit")
+    c_full = c_limit is not None and (view.get("my_c_count") or 0) >= c_limit
     if long_term:
         add(
             [
@@ -198,6 +200,11 @@ def _situation(view: dict, add) -> None:
                     f"{r['name']} {r['pro_team']} {_availability(r)}, value "
                     f"{signed(r['value'], 2)}, fit {fit(r):.1f}, "
                     f"{r.get('roster_pct') or 0:.0f}% rostered"
+                    + (
+                        " (C: I'm at the C limit, so only for a C)"
+                        if c_full and r["c_eligible"]
+                        else ""
+                    )
                     for r in long_term[:LONG_TERM_TARGETS]
                 )
             ]
