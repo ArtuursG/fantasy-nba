@@ -1480,7 +1480,7 @@ function copyPrompt(label, question) {
   showNextStep(label, message);
   try {
     copyText(text).then((ok) => askStatus(ok
-      ? "Step 1 of 2: brief copied. Paste it into ChatGPT: it shows up as an attachment."
+      ? "Brief copied. Paste it into ChatGPT (it shows up as an attachment); in a project with the instructions above, just send. Otherwise add the question below as the message."
       : "The browser blocked copying: open the brief below, select it and copy it yourself.", ok ? "ok" : ""));
   } catch (e) {
     askStatus("Copying failed: " + e.message, "");
@@ -1499,7 +1499,7 @@ function showNextStep(label, message) {
   const text = h("textarea", { class: "report-text question", readonly: true, spellcheck: "false", "aria-label": "Question" });
   text.value = message;
   box.replaceChildren(
-    h("p", {}, h("strong", {}, `Step 2 · ${label}: `), "after pasting the brief, copy the question and paste it as your message."),
+    h("p", {}, h("strong", {}, `Step 2 · ${label}: `), "after pasting the brief, copy the question and paste it as your message. In a ChatGPT project with the instructions above you can skip this for the manager review and just send."),
     text,
     h("div", { class: "actions" }, copy)
   );
@@ -1543,11 +1543,51 @@ function renderAsk() {
   return card(
     "Questions for ChatGPT",
     true,
-    h("p", { class: "note" }, "Two steps, because ChatGPT treats a long paste as an attachment and doesn't take a question inside it as yours. 1: press a question: the manager brief (standings, category map, matchup, opponent, roster, a wide free agent pool, trade market, season picture) is copied; paste it into ChatGPT. 2: press Copy question and paste that as the message, then send."),
+    h("p", { class: "note" }, "Each button copies the manager brief (roster situation, changes since yesterday, standings, category map, matchup, opponent, roster, a wide free agent pool, trade market, season picture) with that question on top. ChatGPT treats a long paste as an attachment and may not take a question inside it as yours, so the question also waits below to paste as the message."),
     h("div", { class: "actions ask-row" }, buttons),
     h("div", { id: "ask-status", class: "status", role: "status", "aria-live": "polite" }),
     h("div", { id: "ask-next", class: "ask-next", hidden: true }),
     h("details", {}, h("summary", { id: "brief-size" }, briefSize()), area)
+  );
+}
+
+// Standing instructions for a ChatGPT project: with them in place, pasting
+// the brief alone gets a full analysis, and the project's chat history lets
+// it compare with earlier days.
+function projectInstructions(meta) {
+  return `You are the assistant manager of my ESPN fantasy basketball team "${meta.my_team}" in the league "${meta.league}" (${meta.teams} teams, head-to-head, categories ${meta.categories.join(", ")}). Always answer in Latvian.
+
+When I send a FANTASY MANAGER BRIEF (pasted or attached, with or without a question), never ask what I want. Analyse it at once and answer in this shape:
+1. Verdict, 2-3 sentences: where the team stands this matchup and this season, and the one thing that matters most today.
+2. Do today: up to 5 concrete moves in priority order (lineup, add with the exact drop, IR), each with one line on why and what it does to which categories.
+3. This matchup: categories to chase, protect or concede, whether it is worth chasing at all, and how to spend the acquisitions left, by day.
+4. Season: roster holes (injuries and how long, weak categories), who to hold, who to target, a trade worth offering if there is one.
+5. Watch: what would change the plan (injury news, minutes, opponent moves) and when to look again.
+
+Rules:
+- Use this project's history: compare with earlier briefs and your earlier advice. Say what changed since last time, what worked and what didn't. Don't repeat advice I didn't take unless something new supports it.
+- The brief's model suggestions are inputs, not answers. Check them against the whole free agent pool, ESPN roster %, minutes and role, and say so when you disagree.
+- Keep one-matchup streams apart from season-long adds. Acquisitions reset every matchup, so unused ones are wasted, but never drop a player whose season value is clearly above the pickup's.
+- Early in the season samples are small: weigh ESPN projections, minutes and role over a few box scores.
+- Be decisive and specific: names, numbers, days. Pick one option instead of listing several; no generic advice.
+- If my message has a question, answer it first, then add only what changed in the plan.`;
+}
+
+function renderProjectSetup(v) {
+  const text = projectInstructions(v.meta);
+  const area = h("textarea", { class: "report-text question tall", readonly: true, spellcheck: "false", "aria-label": "Project instructions" });
+  area.value = text;
+  const copy = h("button", { type: "button", class: "primary" }, "Copy project instructions");
+  const status = h("span", { class: "muted" });
+  copy.addEventListener("click", () => {
+    copyText(text).then((ok) => { status.textContent = ok ? " Copied." : " Copying was blocked: select the text and copy it."; });
+  });
+  return card(
+    "ChatGPT project setup",
+    true,
+    h("p", { class: "note" }, "Once: in ChatGPT open your project, then Instructions (the project's settings), paste this and save. After that COPY FOR CHATGPT, paste and send is enough: no question needed, and it compares with the earlier days in the project's chats."),
+    h("div", { class: "actions" }, copy, status),
+    h("details", {}, h("summary", {}, "Show the instructions"), area)
   );
 }
 
@@ -1662,7 +1702,7 @@ function render(view, demo) {
     wire: [renderPickups(view), renderHot(view), renderFreeAgents(view), renderTransactions(view), renderPopular(view)],
     league: [renderStandings(view), renderSeason(view), renderSeasonOutlook(view), renderPunt(view), renderHabits(view), renderStrength(view), renderTrade(view), renderTeams(view)],
     rankings: [renderRankings(view)],
-    report: [renderAsk(), renderReport()],
+    report: [renderProjectSetup(view), renderAsk(), renderReport()],
     setup: NO_SERVER ? [] : [renderSettings()],
   };
   renderTabs({ today: fixes });

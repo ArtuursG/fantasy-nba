@@ -648,6 +648,7 @@ tr.day-score td { font-weight: 600; border-top: 2px solid var(--ink); }
 .ask-next[hidden] { display: none; }
 .ask-next p { margin: 0 0 8px; }
 .report-text.question { min-height: 96px; }
+.report-text.question.tall { min-height: 260px; margin-top: 8px; }
 button.ask { border-color: var(--spot); color: var(--spot); }
 button.ask:hover:not(:disabled) { background: var(--spot); color: var(--spot-ink); border-color: var(--spot); }
 

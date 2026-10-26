@@ -86,6 +86,7 @@ def render_brief(view: dict) -> str:
     add([f"- My team: {m['my_team']}. Punting: {punt}."])
 
     _situation(view, add)
+    _since(view, add)
     _standings(view, add)
     _category_map(view, add)
     _todo(view, add)
@@ -252,6 +253,35 @@ def _situation(view: dict, add) -> None:
                 + "; ".join(parts)
                 + ". Standings count categories, so every category won this week counts "
                 "toward the seed even in a lost matchup."
+            ]
+        )
+
+
+CHANGES = 12
+
+
+def _since(view: dict, add) -> None:
+    """What moved since the previous snapshot, my own moves and how the
+    win chance went, so a reader with earlier briefs can follow the thread."""
+    changes = (view.get("changes") or {}).get("bullets") or []
+    trend = view.get("trend") or {}
+    by_day: dict[str, dict] = {}
+    for point in trend.get("points") or []:
+        by_day[point["label"][:3]] = point  # the last refresh of each day
+    if not (changes or by_day or trend.get("moves")):
+        return
+    since = view["meta"].get("compared_with")
+    add(["", f"## SINCE THE LAST SNAPSHOT{f' ({since})' if since else ''}"])
+    add([f"- {c}" for c in changes[:CHANGES]])
+    if len(changes) > CHANGES:
+        add([f"- ... and {len(changes) - CHANGES} smaller changes"])
+    if trend.get("moves"):
+        add(["My moves this matchup: " + "; ".join(mv["text"] for mv in trend["moves"])])
+    if by_day:
+        add(
+            [
+                "Win chance this matchup, by day: "
+                + " -> ".join(f"{day} {pt['p'] * 100:.0f}%" for day, pt in by_day.items())
             ]
         )
 
