@@ -69,6 +69,14 @@ def build_parser() -> argparse.ArgumentParser:
         "export", parents=[common], help="Write the dashboard as static files for hosting"
     )
     export.add_argument("--out", type=Path, default=Path("site"), help="Default: site/")
+    what = export.add_mutually_exclusive_group()
+    what.add_argument(
+        "--shell",
+        action="store_true",
+        help="The page alone, reading data.json from the repository's data branch",
+    )
+    what.add_argument("--data", action="store_true", help="Only data.json, for the data branch")
+    export.add_argument("--repo", help="owner/name for --shell (default: $GITHUB_REPOSITORY)")
     return parser
 
 
@@ -137,10 +145,15 @@ def main(argv: list[str] | None = None) -> int:
                 print("Report sent to Telegram.")
             return 0
         if args.command == "export":
-            from fantasy.web.export import ExportError, export_site
+            from fantasy.web.export import ExportError, export_data, export_shell, export_site
 
             try:
-                out = export_site(app, args.out)
+                if args.shell:
+                    out = export_shell(args.out, args.repo)
+                elif args.data:
+                    out = export_data(app, args.out)
+                else:
+                    out = export_site(app, args.out)
             except ExportError as exc:
                 print(exc, file=sys.stderr)
                 return 1

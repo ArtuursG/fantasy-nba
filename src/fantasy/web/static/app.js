@@ -32,8 +32,12 @@ let reportText = "";
 let currentView = null;
 let whatIfSelect = null;
 // Set by static/data.js when the dashboard is hosted as static files
-// (`fantasy export`): no server, so no refresh, settings or trade evaluator.
-const STATIC = window.FANTASY_STATIC || null;
+// (`fantasy export`), or loaded from the repository's data branch when
+// static/hosted.js says where (`fantasy export --shell`). Either way there
+// is no server, so no settings or trade evaluator.
+let STATIC = window.FANTASY_STATIC || null;
+const HOSTED = window.FANTASY_HOSTED || null;
+const NO_SERVER = Boolean(STATIC || HOSTED);
 
 function setStatus(text, kind) {
   const el = $("status");
@@ -959,7 +963,7 @@ function renderTrade(v) {
     tt && tt.sell.length ? [h("h3", {}, "Sell (worth more to the league)"), h("ul", {}, tt.sell.map(line))] : null,
     tt && tt.needs.length ? [h("h3", {}, `Help in your weakest categories (${tt.needs.join(", ")})`), h("ul", {}, tt.need_targets.slice(0, 6).map(line))] : null,
     h("h3", {}, "Try a trade"),
-    STATIC ? h("p", { class: "note" }, "The trade evaluator needs the app running on a computer (uv run fantasy serve).") : [
+    NO_SERVER ? h("p", { class: "note" }, "The trade evaluator needs the app running on a computer (uv run fantasy serve).") : [
       h("div", { class: "form" },
         h("div", { class: "field" }, h("span", {}, "You give"), h("div", { class: "picklist" }, giveBoxes.map(([, label]) => label))),
         h("div", { class: "field" }, h("span", {}, "You get from"), partner, getList)
@@ -1551,7 +1555,7 @@ const TABS = [
   ["report", "Report"],
   ["setup", "Setup"],
 ];
-if (STATIC) TABS.splice(TABS.findIndex(([key]) => key === "setup"), 1);
+if (NO_SERVER) TABS.splice(TABS.findIndex(([key]) => key === "setup"), 1);
 
 // Small per-browser memory (last tab, Compact); the page works without it.
 function remember(key, value) {
@@ -1629,7 +1633,7 @@ function render(view, demo) {
     league: [renderStandings(view), renderSeason(view), renderSeasonOutlook(view), renderPunt(view), renderHabits(view), renderStrength(view), renderTrade(view), renderTeams(view)],
     rankings: [renderRankings(view)],
     report: [renderAsk(), renderReport()],
-    setup: STATIC ? [] : [renderSettings()],
+    setup: NO_SERVER ? [] : [renderSettings()],
   };
   renderTabs({ today: fixes });
   app.append(...TABS.map(([key]) => h("div", { class: "section", "data-tab": key, role: "tabpanel" }, sections[key].filter(Boolean))));
@@ -1666,9 +1670,10 @@ async function loadReport() {
 }
 
 async function loadState() {
+  if (HOSTED && !STATIC) STATIC = await loadHostedData();
   if (STATIC) {
     // On GitHub Pages, Refresh starts the workflow that reads ESPN.
-    $("refresh").hidden = !STATIC.repo;
+    $("refresh").hidden = !(HOSTED || STATIC).repo;
     render(STATIC.view, STATIC.demo);
     return;
   }
@@ -1679,7 +1684,7 @@ async function loadState() {
 }
 
 async function refresh() {
-  if (STATIC) return refreshHosted();
+  if (NO_SERVER) return refreshHosted();
   const button = $("refresh");
   button.disabled = true;
   setStatus("Reading the league from ESPN... this takes a few seconds.");
@@ -1700,27 +1705,65 @@ async function refresh() {
 }
 
 // The hosted page has no server: it asks GitHub to run the workflow that
-// reads ESPN and publishes the page, then reloads once the new data is up.
+// reads ESPN and publishes the data, then reloads once the new data is up.
 // That takes a GitHub token with Actions read/write on this repository
 // only, kept in this browser alone.
 const TOKEN_KEY = "github-token";
 let refreshPoll = null;
 
+// The data branch holds one commit, replaced on every run. Its newest
+// commit id names an exact copy of data.json, which no cache holds back
+// (the branch address can be up to 5 minutes old). Asking GitHub again
+// with the ETag costs nothing against its hourly limit.
+const DATA_CACHE = "fantasy-daily-data";
+let dataSha = null;
+
+async function latestDataSha() {
+  const headers = { Accept: "application/vnd.github.sha" };
+  const token = recall(TOKEN_KEY);
+  if (token) headers.Authorization = "Bearer " + token;
+  const res = await fetch(`https://api.github.com/repos/${HOSTED.repo}/commits/${HOSTED.branch}`, { headers, cache: "no-cache" });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  return (await res.text()).trim();
+}
+
+async function loadHostedData() {
+  let sha = null;
+  try { sha = await latestDataSha(); } catch { /* over GitHub's limit or offline: the branch address */ }
+  try {
+    const res = await fetch(`https://raw.githubusercontent.com/${HOSTED.repo}/${sha || HOSTED.branch}/data.json`, { cache: sha ? "default" : "no-cache" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const text = await res.text();
+    dataSha = sha;
+    try { await (await caches.open(DATA_CACHE)).put("data.json", new Response(text)); } catch { /* no Cache API */ }
+    return JSON.parse(text);
+  } catch (err) {
+    // Offline: the copy saved last time.
+    const saved = "caches" in window ? await (await caches.open(DATA_CACHE)).match("data.json") : null;
+    if (saved) {
+      setStatus("Offline: showing the data saved last time.");
+      return saved.json();
+    }
+    throw err;
+  }
+}
+
 async function refreshHosted() {
+  const site = HOSTED || STATIC;
   const token = recall(TOKEN_KEY);
   if (!token) return askForToken();
   const button = $("refresh");
   button.disabled = true;
   setStatus("Asking GitHub to read the league from ESPN...");
   try {
-    const res = await fetch(`https://api.github.com/repos/${STATIC.repo}/actions/workflows/${STATIC.workflow}/dispatches`, {
+    const res = await fetch(`https://api.github.com/repos/${site.repo}/actions/workflows/${site.workflow}/dispatches`, {
       method: "POST",
       headers: { Authorization: "Bearer " + token, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" },
-      body: JSON.stringify({ ref: STATIC.ref || "main" }),
+      body: JSON.stringify({ ref: site.ref || "main" }),
     });
     if (res.status === 401 || res.status === 403 || res.status === 404) {
       button.disabled = false;
-      askForToken(`GitHub refused the token (HTTP ${res.status}): it may have expired or lack Actions read/write on ${STATIC.repo}. Paste a new one.`);
+      askForToken(`GitHub refused the token (HTTP ${res.status}): it may have expired or lack Actions read/write on ${site.repo}. Paste a new one.`);
       return;
     }
     if (!res.ok) throw new Error("HTTP " + res.status);
@@ -1736,7 +1779,7 @@ async function refreshHosted() {
     if (Date.now() - started > 10 * 60 * 1000) {
       clearInterval(refreshPoll);
       button.disabled = false;
-      setStatus(`No new data after 10 minutes: see github.com/${STATIC.repo}/actions.`, "error");
+      setStatus(`No new data after 10 minutes: see github.com/${site.repo}/actions.`, "error");
       return;
     }
     checkForNewData();
@@ -1757,7 +1800,7 @@ function askForToken(message) {
   const el = $("status");
   el.className = "status token-form";
   el.replaceChildren(
-    h("p", {}, message || "To refresh from this page, it needs a GitHub token once. On GitHub: Settings, Developer settings, Personal access tokens, Fine-grained tokens, Generate new token. Repository access: only " + STATIC.repo + "; permissions: Actions, read and write. Paste it here: it stays in this browser only."),
+    h("p", {}, message || "To refresh from this page, it needs a GitHub token once. On GitHub: Settings, Developer settings, Personal access tokens, Fine-grained tokens, Generate new token. Repository access: only " + (HOSTED || STATIC).repo + "; permissions: Actions, read and write. Paste it here: it stays in this browser only."),
     h("div", { class: "actions" }, input, save, cancel)
   );
   input.focus();
@@ -1798,6 +1841,17 @@ function updateFreshness() {
 setInterval(updateFreshness, 60 * 1000);
 
 async function checkForNewData() {
+  if (HOSTED) {
+    try {
+      const sha = await latestDataSha();
+      if (!dataSha) dataSha = sha;
+      else if (sha !== dataSha) {
+        setStatus("New data is up: reloading...", "ok");
+        location.reload();
+      }
+    } catch { /* offline or over GitHub's limit: try again later */ }
+    return;
+  }
   if (!STATIC) return;
   try {
     const res = await fetch("static/version.json?t=" + Date.now(), { cache: "no-store" });
@@ -1809,11 +1863,11 @@ async function checkForNewData() {
     }
   } catch { /* offline: try again later */ }
 }
-if (STATIC && "serviceWorker" in navigator) {
+if (NO_SERVER && "serviceWorker" in navigator) {
   // Installable and readable offline (the hosted page only).
   navigator.serviceWorker.register("sw.js").catch(() => {});
 }
-if (STATIC) {
+if (NO_SERVER) {
   setInterval(checkForNewData, 5 * 60 * 1000);
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") checkForNewData(); });
 }

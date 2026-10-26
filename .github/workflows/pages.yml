@@ -1,0 +1,54 @@
+name: Page
+
+# The page itself: deployed only when its code changes. Its data comes from
+# the data branch, which the hourly run replaces (daily.yml).
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/fantasy/web/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  deployments: write
+
+concurrency:
+  group: pages
+
+jobs:
+  build:
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "latest"
+      - run: uv sync --no-dev
+      - run: uv run fantasy export --shell --out site
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v5
+        id: deployment
+      - name: Keep only the newest deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --paginate "repos/$GITHUB_REPOSITORY/deployments?environment=github-pages&per_page=100" \
+            --jq '.[].id' | sort -rn | tail -n +2 | while read -r id; do
+            gh api -X POST "repos/$GITHUB_REPOSITORY/deployments/$id/statuses" -f state=inactive > /dev/null || true
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/deployments/$id" > /dev/null || true
+          done

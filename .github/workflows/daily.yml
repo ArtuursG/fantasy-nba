@@ -9,9 +9,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  # Writes the data branch the page reads.
+  contents: write
 
 concurrency:
   group: daily-report
@@ -59,22 +58,19 @@ jobs:
           name: fantasy-report
           path: reports/
           retention-days: 14
-      - name: Build the dashboard
+      # The page (deployed by pages.yml only when its code changes) reads
+      # data.json from the data branch: one commit, replaced every run, so
+      # no new Pages deployment and no history piling up.
+      - name: Publish the data for the page
         if: ${{ !github.event.repository.private }}
-        run: uv run fantasy export --out site
-      - name: Prepare the dashboard for GitHub Pages
-        if: ${{ !github.event.repository.private }}
-        uses: actions/upload-pages-artifact@v5
-        with:
-          path: site
-
-  pages:
-    needs: report
-    if: ${{ !github.event.repository.private }}
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - uses: actions/deploy-pages@v5
-        id: deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          uv run fantasy export --data --out public
+          cd public
+          git init -q -b data
+          git add data.json
+          git -c user.name="github-actions[bot]" \
+            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "League data"
+          git push -q --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" data

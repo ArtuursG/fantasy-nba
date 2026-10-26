@@ -141,3 +141,22 @@ def test_export_writes_a_static_dashboard(env):
         '"static/manifest.webmanifest"' in page
         and (out / "static" / "icons" / "icon-192.png").exists()
     )
+
+
+def test_export_shell_and_data_for_the_data_branch(env):
+    shell = Path(env, "shell")
+    assert main(["export", "--shell", "--repo", "someone/fantasy", "--out", str(shell)]) == 0
+    page = (shell / "index.html").read_text(encoding="utf-8")
+    assert page.index('"static/hosted.js"') < page.index('"static/app.js"')
+    assert not (shell / "static" / "data.js").exists()
+    hosted = (shell / "static" / "hosted.js").read_text(encoding="utf-8")
+    config = json.loads(hosted.removeprefix("window.FANTASY_HOSTED = ").rstrip().rstrip(";"))
+    assert config["repo"] == "someone/fantasy" and config["branch"] == "data"
+
+    data_dir = Path(env, "public")
+    assert main(["export", "--data", "--demo", "--out", str(data_dir)]) == 1  # no snapshot yet
+    assert main(["refresh", "--demo"]) == 0
+    assert main(["export", "--data", "--demo", "--out", str(data_dir)]) == 0
+    payload = json.loads((data_dir / "data.json").read_text(encoding="utf-8"))
+    assert payload["report"]["brief"].startswith("# FANTASY MANAGER BRIEF")
+    assert payload["view"]["meta"]["my_team"]

@@ -1,13 +1,16 @@
 // Offline copy of the hosted dashboard. Network first for everything, so a
 // new export or new code shows up at once; the cache answers only offline.
+// Data read from the repository's data branch is saved by the page itself.
 // Fonts and icons never change, so they come from the cache first.
-const CACHE = "fantasy-daily-v1";
+const CACHE = "fantasy-daily-v2";
+const DATA_CACHE = "fantasy-daily-data"; // the page's own, kept
 const CORE = [
   "./",
   "index.html",
   "static/style.css",
   "static/app.js",
   "static/data.js",
+  "static/hosted.js",
   "static/manifest.webmanifest",
 ];
 
@@ -20,7 +23,7 @@ self.addEventListener("install", (event) => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+    caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE && k !== DATA_CACHE).map((k) => caches.delete(k))))
   );
   self.clients.claim();
 });
