@@ -38,6 +38,21 @@ jobs:
           path: data
           key: snapshots-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: snapshots-
+      # The history (one snapshot a day, forecasts, results, injury statuses)
+      # lives in that cache; the data branch keeps a copy in case GitHub
+      # ever drops the cache.
+      - name: Fall back to the history copy on the data branch
+        if: ${{ !github.event.repository.private }}
+        run: |
+          if [ ! -f data/fantasy.db ]; then
+            mkdir -p data
+            if curl -fsSL -o data/fantasy.db \
+              "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/data/history.db"; then
+              echo "History restored from the data branch."
+            else
+              rm -f data/fantasy.db
+            fi
+          fi
       - run: uv sync --no-dev
       - name: Read the league and write the reports
         run: |
@@ -67,9 +82,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           uv run fantasy export --data --out public
+          cp data/fantasy.db public/history.db
           cd public
           git init -q -b data
-          git add data.json
+          git add data.json history.db
           git -c user.name="github-actions[bot]" \
             -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
             commit -q -m "League data"
