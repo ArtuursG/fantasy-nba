@@ -356,6 +356,11 @@ def parse_league(raw: dict[str, Any], meta: dict[str, Any]) -> League:
         scoring_type=scoring.get("scoringType"),
         regular_periods=_int_or_none(schedule.get("matchupPeriodCount")),
         playoff_team_count=_int_or_none(schedule.get("playoffTeamCount")),
+        divisions={
+            int(d["id"]): d.get("name") or f"Division {d['id']}"
+            for d in schedule.get("divisions") or []
+            if d.get("id") is not None
+        },
     )
 
 
@@ -436,6 +441,8 @@ def parse_teams(raw: dict[str, Any], players: dict[int, Player], season: int) ->
                 int(k): int(v) for k, v in (counter.get("matchupAcquisitionTotals") or {}).items()
             },
             season_stats=_season_stats(data.get("valuesByStat") or {}),
+            division_id=int(data["divisionId"]) if data.get("divisionId") is not None else None,
+            playoff_seed=_int_or_none(data.get("playoffSeed")) or None,
         )
         for entry in (data.get("roster") or {}).get("entries") or []:
             wrapper = dict(entry.get("playerPoolEntry") or {})

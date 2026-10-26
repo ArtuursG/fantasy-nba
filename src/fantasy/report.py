@@ -1320,33 +1320,45 @@ class Report:
         rows = self.view.get("season_standings")
         if not rows:
             return
-        self.section("SEASON CATEGORY TOTALS (actual, rank 1 = best)")
+        self.section("STANDINGS AND SEASON STATS (as on ESPN)")
+        self.add(
+            "Each category won in a matchup counts as a win. Seed = ESPN's current playoff "
+            "seed. Totals are season to date; (n) = league rank, 1 best, TO low is best.",
+            "",
+        )
         cats = list(rows[0]["values"])
-        self.add("Season-to-date category totals from ESPN; TO ranked low-is-best.", "")
+
+        def label(r: dict) -> str:
+            return r["team"] + (" (me)" if r["is_me"] else " (opp)" if r["is_opp"] else "")
+
         self.add(
             *table(
-                ["Team", "Record", *cats, "Avg rank"],
+                ["Seed", "Team", "Division", "W-L-T", "PCT", "GB"],
                 (
                     [
-                        r["team"] + (" (me)" if r["is_me"] else " (opp)" if r["is_opp"] else ""),
+                        r["seed"] or "-",
+                        label(r),
+                        r["division"] or "-",
                         r["record"],
-                        *(r["ranks"].get(c, "-") for c in cats),
-                        f"{r['avg_rank']:.1f}",
+                        f"{r['pct']:.3f}".lstrip("0"),
+                        num(r["gb"]) if r["gb"] else "--",
                     ]
                     for r in rows
                 ),
             )
         )
-        self.add("", "Totals:", "")
+        self.add("")
         self.add(
             *table(
-                ["Team", *cats],
+                ["Team", *cats, "Avg rank"],
                 (
-                    [r["team"]]
+                    [label(r)]
                     + [
-                        pct(r["values"].get(c)) if c.endswith("%") else num(r["values"].get(c), 0)
+                        (pct(r["values"].get(c)) if c.endswith("%") else num(r["values"].get(c), 0))
+                        + f" ({r['ranks'].get(c, '-')})"
                         for c in cats
                     ]
+                    + [f"{r['avg_rank']:.1f}"]
                     for r in rows
                 ),
             )
@@ -1602,7 +1614,7 @@ class Report:
             f"Range: {label} | top {RANKING_ROUNDS} rounds ({RANKING_ROUNDS * teams} players) by "
             + ("punt value" if punt else "value")
             + ". Values are per-game z-scores against the rostered players (about +1 for a "
-            "first-rounder, 0 at the edge of rosterable)."
+            "first-rounder, 0 an average rostered player in this league)."
             + (
                 f" Punting {', '.join(punt)}: Value leaves it out, LeagV counts it." if punt else ""
             ),
@@ -1788,7 +1800,7 @@ class Report:
             "- Roster % and its change are across all ESPN leagues.",
             "- Value: average per-game z-score against the rostered players, percentages "
             "weighted by attempts and turnovers counted against; about +1 is a first-round "
-            "player, 0 the edge of rosterable. Rank is by value in the PLAYER RANKINGS range; "
+            "player, 0 an average rostered player. Rank is by value in the PLAYER RANKINGS range; "
             "L15 Value uses the last 15 days.",
             "- Matchup win chance: categories treated as independent (they're not quite: a big "
             "night lifts several at once), so read it as a guide. Category wins are counted, so "

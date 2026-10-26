@@ -2,9 +2,11 @@
 
 ESPN's rank orders by season value. This ranking starts from the same kind
 of value (9-cat z-score of the projection line) and adds what a manager
-acts on: recent form, a minutes jump, a new starting job, an injured
-teammate, a return from injury, the add rate, and how many games he could
-actually start for this roster before the matchup ends.
+acts on: how widely he is rostered across ESPN (the market's view), recent
+form, a minutes jump, a new starting job, an injured teammate, a return
+from injury, the add rate, and how many games he could actually start for
+this roster before the matchup ends (a small part: streaming has its own
+list).
 """
 
 from __future__ import annotations
@@ -22,6 +24,9 @@ RETURN_SOON = timedelta(days=3)
 # Last-5 value this far (in summed z-scores) from the projection is hot/cold.
 HOT = 2.5
 STRONG_Z = 0.75
+# Rostered share across ESPN leagues is the market's view of a player's
+# rest-of-season worth; it counts above or below this share.
+MARKET_PIVOT = 25.0
 
 
 def _clamp(value: float, low: float, high: float) -> float:
@@ -50,7 +55,9 @@ def rank_free_agents(
         value = ctx.values.get(player_id, 0.0)
         form = 0.0
         if len(info.last5) >= 3:
+            # Three games say less than five.
             form = _clamp(ctx.valuation.score(average(info.last5)) - value, -4, 4)
+            form *= len(info.last5) / 5
         with_game, usable = candidate_days(player, my_plans, ctx.calendar, ctx.now)
         out = _out_for_now(player.injury_status, player.expected_return, today)
         c_capped = C_SLOT in player.eligible_slots and my_c_count >= c_limit
@@ -63,7 +70,8 @@ def rank_free_agents(
             + (0.8 if opps.get(player_id) else 0.0)
             + (0.5 if info.returned else 0.0)
             + 0.06 * _clamp(player.percent_change or 0.0, -10, 25)
-            + 0.3 * len(usable)
+            + 0.04 * _clamp((player.percent_owned or 0.0) - MARKET_PIVOT, -25, 50)
+            + 0.15 * len(usable)
             - (4.0 if out else 0.0)
             - (0.5 if player.injury_status in ("DAY_TO_DAY", "QUESTIONABLE") else 0.0)
             - (0.3 if c_capped else 0.0)

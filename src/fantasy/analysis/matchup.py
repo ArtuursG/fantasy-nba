@@ -451,11 +451,13 @@ def _record(projected: list[dict]) -> str:
 
 
 def team_strength(ctx: Context, rosters: dict[int, list[int]] | None = None) -> dict[int, dict]:
-    """Per-game category output of each roster's healthy, non-IR players,
+    """Per-game category output of each roster's best healthy, non-IR
+    players, as many as there are starting slots (only starters count),
     ranked 1 (best) to N across the league. `rosters` replaces some teams'
     players (team id -> player ids), to see what a trade would do."""
     values: dict[int, dict[str, float | None]] = {}
     counted: dict[int, int] = {}
+    slots = len(starting_slots(ctx.snap.league.lineup_slots))
     for team in ctx.snap.teams:
         if rosters and team.id in rosters:
             ids = rosters[team.id]
@@ -467,6 +469,7 @@ def team_strength(ctx: Context, rosters: dict[int, list[int]] | None = None) -> 
             if pid in ctx.snap.players
             and ctx.snap.players[pid].injury_status not in UNAVAILABLE_STATUSES
         ]
+        players = sorted(players, key=lambda p: -ctx.values.get(p.id, 0.0))[:slots]
         totals = dict.fromkeys(COUNTING_FIELDS, 0.0)
         for player in players:
             for name in COUNTING_FIELDS:

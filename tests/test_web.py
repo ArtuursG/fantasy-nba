@@ -110,12 +110,13 @@ def test_trade_endpoint(server):
 def test_demo_refresh_fills_the_accuracy_log(server):
     view = httpx.post(server + "/api/refresh", timeout=60).json()["view"]
     assert view["accuracy"]["matchups"] == 1
-    assert view["accuracy"]["forecasts"] == 9
+    # One or both earlier demo snapshots fall in that matchup, by weekday.
+    assert view["accuracy"]["forecasts"] in (9, 18)
 
 
 def test_brief_report_is_served(server):
     httpx.post(server + "/api/refresh", timeout=60)
     brief = httpx.get(server + "/api/report?kind=brief")
     full = httpx.get(server + "/api/report")
-    assert brief.status_code == 200 and brief.text.startswith("# FANTASY BRIEF")
+    assert brief.status_code == 200 and brief.text.startswith("# FANTASY MANAGER BRIEF")
     assert len(brief.text) < len(full.text)

@@ -125,7 +125,7 @@ def test_report_shows_win_chances_simulator_and_advanced(view):
     assert "Win chances: expected categories won" in text
     assert "## ADD/DROP SIMULATOR" in text and "| Add | Team | Drop |" in text
     assert "- Advanced (season): TS%" in text
-    assert "## SEASON CATEGORY TOTALS (actual, rank 1 = best)" in text
+    assert "## STANDINGS AND SEASON STATS (as on ESPN)" in text
     assert "-0.00" not in text
 
 

@@ -801,8 +801,12 @@ class DemoWorld:
                     },
                     "roster": {"entries": entries},
                     "valuesByStat": self._values_by_stat(ids, as_of, sp),
+                    "divisionId": (team_id - 1) % 2,
                 }
             )
+        by_record = sorted(teams, key=lambda t: -t["record"]["overall"]["wins"])
+        for seed, team in enumerate(by_record, 1):
+            team["playoffSeed"] = seed
 
         schedule = []
         for item_period, pairs in (
@@ -870,6 +874,10 @@ class DemoWorld:
                     # 18 regular-season weeks, then two playoff weeks.
                     "matchupPeriodCount": 18,
                     "playoffTeamCount": 4,
+                    "divisions": [
+                        {"id": 0, "name": "East", "size": 5},
+                        {"id": 1, "name": "West", "size": 5},
+                    ],
                     # As ESPN sends it: the weeks each matchup covers.
                     "matchupPeriods": {str(k): [k] for k in range(1, 21)},
                 },

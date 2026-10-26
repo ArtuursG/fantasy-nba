@@ -26,7 +26,7 @@ SECTIONS = [
     "WAIVER ORDER",
     "IMPORTANT CHANGES SINCE YESTERDAY",
     "CATEGORY STRENGTH (projected, rank 1 = best)",
-    "SEASON CATEGORY TOTALS (actual, rank 1 = best)",
+    "STANDINGS AND SEASON STATS (as on ESPN)",
     "SEASON OUTLOOK",
     "MANAGER HABITS",
     "PUNT ANALYSIS",
@@ -104,7 +104,16 @@ def test_brief_is_short_and_keeps_the_decisions(view):
     from fantasy.brief import render_brief
 
     text = render_brief(view)
-    assert len(text) < 12000 < len(render_report(view, compact=True))
-    for heading in ("## TO DO NOW", "## MATCHUP", "## MY ROSTER", "## TOP FREE AGENTS"):
+    assert len(text) < 20000 < len(render_report(view, compact=True))
+    for heading in (
+        "## NOTES FOR THE ASSISTANT",
+        "## STANDINGS",
+        "## CATEGORY MAP",
+        "## THIS MATCHUP",
+        "## OPPONENT",
+        "## MY ROSTER",
+        "## FREE AGENT POOL",
+        "## TRADE MARKET",
+    ):
         assert heading in text
     assert view["my_team"]["roster"][0]["name"] in text

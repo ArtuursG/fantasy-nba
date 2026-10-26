@@ -69,7 +69,8 @@ def projection_line(player: Player) -> StatLine:
     """Per-game expectation used for projections and player value.
 
     Season averages, pulled toward ESPN's projection (or last season) while
-    the sample is small, then nudged toward the last 15 days.
+    the sample is small, then nudged toward the last 15 days once the season
+    holds more than those.
     """
     season = player.stats.get("season")
     prior = player.stats.get("projected")
@@ -87,7 +88,10 @@ def projection_line(player: Player) -> StatLine:
         return average(last_games(player, 10))
 
     recent = player.stats.get("last15")
-    if recent is not None and recent.gp >= RECENT_MIN_GAMES:
+    # Early in the season the last 15 days are the whole season, already in
+    # the blend above; counting them again would trust three games twice.
+    older = (season.gp if season is not None else 0) - (recent.gp if recent is not None else 0)
+    if recent is not None and recent.gp >= RECENT_MIN_GAMES and older >= RECENT_MIN_GAMES:
         return mix(recent, base, RECENT_WEIGHT)
     return base
 
@@ -147,7 +151,7 @@ class Valuation:
         return sum(scores[c] for c in counted)
 
     def mean(self, line: StatLine, punt: tuple[str, ...] = ()) -> float:
-        """Average z-score per category: about +1 for a first-round player,
-        0 at the edge of the rosterable pool."""
+        """Average z-score per category against the rostered players: about
+        +1 for a first-round player, 0 for an average rostered one."""
         counted = [c for c in self.params if c not in punt]
         return self.score(line, punt) / len(counted) if counted else 0.0

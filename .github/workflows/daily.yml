@@ -2,9 +2,10 @@ name: Daily report
 
 on:
   schedule:
-    # Every two hours: results soon after the games, fresh injury news
-    # before lineup lock. GitHub often starts scheduled runs late.
-    - cron: "23 */2 * * *"
+    # Hourly: GitHub starts scheduled runs late and skips some when busy,
+    # so asking often keeps the gaps short. The page's Refresh starts one
+    # at any time.
+    - cron: "23 * * * *"
   workflow_dispatch:
 
 permissions:
