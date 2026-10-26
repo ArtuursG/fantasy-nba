@@ -239,6 +239,8 @@ input[type="checkbox"] { accent-color: var(--spot); margin: 0; }
 }
 .status.ok:not(:empty) { border-left-color: var(--win); }
 .status.error:not(:empty) { border-left-color: var(--loss); }
+.token-form p { margin: 0 0 8px; }
+.token-form input { flex: 1 1 240px; min-width: 0; padding: 8px 10px; font: inherit; border: 1.5px solid var(--ink); background: var(--paper); color: var(--ink); }
 .banner {
   max-width: 1500px;
   margin: 12px auto 0;

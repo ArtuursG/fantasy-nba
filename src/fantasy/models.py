@@ -130,6 +130,8 @@ class Team:
     matchup_acquisitions: dict[int, int] = field(default_factory=dict)
     roster: list[RosterSpot] = field(default_factory=list)
     season_stats: dict[str, float] = field(default_factory=dict)
+    division_id: int | None = None
+    playoff_seed: int | None = None
 
 
 @dataclass
@@ -201,6 +203,7 @@ class League:
     # teams make the playoffs, when ESPN says.
     regular_periods: int | None = None
     playoff_team_count: int | None = None
+    divisions: dict[int, str] = field(default_factory=dict)
 
 
 @dataclass

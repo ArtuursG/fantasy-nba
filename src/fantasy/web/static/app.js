@@ -1007,21 +1007,47 @@ function renderAdvanced(v) {
   );
 }
 
+function renderStandings(v) {
+  const rows = v.season_standings;
+  if (!rows) return null;
+  const label = (r) => r.team + (r.is_me ? " (me)" : r.is_opp ? " (opp)" : "");
+  const groups = [...new Set(rows.map((r) => r.division || ""))];
+  const playoffs = v.season_outlook ? v.season_outlook.playoff_teams : null;
+  const divTable = (name) => {
+    const list = rows.filter((r) => (r.division || "") === name)
+      .sort((a, b) => b.pct - a.pct || (a.seed || 99) - (b.seed || 99));
+    return [
+      name ? h("h3", { class: "subhead" }, name) : null,
+      table(["RK", "Team", "W", "L", "T", "PCT", "GB", "Seed"], list.map((r, i) => ({
+        cls: r.is_me ? "mine" : null,
+        cells: [i + 1, { node: label(r), cls: "strong" }, r.wins, r.losses, r.ties, r.pct.toFixed(3).replace(/^0/, ""), r.gb ? num(r.gb) : "--",
+          r.seed ? { node: String(r.seed), cls: playoffs && r.seed > playoffs ? "muted" : "" } : "-"],
+      })), { textCols: [1] }),
+    ];
+  };
+  return card(
+    "Standings",
+    true,
+    h("p", { class: "note" }, `As on ESPN: each category won in a matchup counts as a win.${playoffs ? ` Seed: ESPN's current playoff seed; top ${playoffs} make the playoffs.` : ""}`),
+    groups.map(divTable)
+  );
+}
+
 function renderSeason(v) {
   const rows = v.season_standings;
   if (!rows) return null;
   const cats = Object.keys(rows[0].values);
   return card(
-    "Season totals",
+    "Season stats",
     true,
-    h("p", { class: "note" }, "Actual category totals so far. Rank 1 is best; hover a rank for the total."),
+    h("p", { class: "note" }, "Actual season-to-date totals, as on ESPN's standings page, in seed order. The colour is each total's rank in the league (green best, TO low is best); Avg is the average rank."),
     table(
-      ["Team", "Record", ...cats, "Avg"],
+      ["Team", "W-L-T", ...cats, "Avg"],
       rows.map((r) => ({
         cls: r.is_me ? "mine" : null,
         cells: [
           r.team + (r.is_me ? " (me)" : r.is_opp ? " (opp)" : ""), r.record,
-          ...cats.map((c) => ({ node: r.ranks[c] ?? "-", cls: r.ranks[c] ? "rank-" + r.ranks[c] : "", title: c.endsWith("%") ? pct(r.values[c]) : num(r.values[c], 0) })),
+          ...cats.map((c) => ({ node: c.endsWith("%") ? pct(r.values[c]) : num(r.values[c], 0), cls: r.ranks[c] ? "rank-" + r.ranks[c] : "", title: "Rank " + (r.ranks[c] ?? "-") })),
           num(r.avg_rank),
         ],
       })),
@@ -1416,13 +1442,13 @@ function renderSettings() {
 }
 
 // Ready questions for ChatGPT: each copies the question plus the brief.
-const INTRO = "I play in an ESPN fantasy basketball H2H categories league. Below is today's short report from my own analytics page. Answer in Latvian.";
+const INTRO = "Below is today's manager brief for my ESPN fantasy basketball team, from my own analytics page. Read all of it before answering. Answer in Latvian.";
 const PROMPTS = [
-  ["Matchup plan", "Analyse my current matchup: which categories I can still win, which are better conceded, and which concrete moves (lineup, pickups, drops) raise my chance to win the most. Keep it short and name the players."],
-  ["Who to pick up", "Which free agents should I pick up this week and whom should I drop? Take into account the games per day, my open lineup slots, my weak categories and the acquisitions I have left."],
-  ["Tonight's lineup", "Check my lineup and injuries for today: does anything need to change before tip-off? If everything is fine, say so in one sentence."],
-  ["Trades", "Assess the trade ideas in the report and suggest 1-2 trades to offer, with a short argument why each also suits the other team."],
-  ["Season strategy", "What is a good long-term strategy for my team: should I punt a category, which players to hold or move, and how to prepare for the playoff weeks?"],
+  ["Weekly game plan", "Build my plan for the rest of this matchup. Decide which categories to target and which to concede against this opponent, how many of my remaining acquisitions to use and on which days, and which lineup and roster moves follow from that. Search the whole free agent pool, not only the model's top names. Order the moves by impact, one line of reasoning each."],
+  ["Roster upgrade", "Look past this week. Which 1-3 spots on my roster are the weakest for the rest of the season, and which free agents or waiver players are real upgrades given my category strengths and weaknesses? Keep long-term adds apart from one-week streams, and name the drop for each add."],
+  ["Tonight's lineup", "Check today's lineup and injuries: does anything need to change before tip-off? If everything is fine, say so in one sentence."],
+  ["Trade targets", "Using the category map and the trade market, find 2-3 realistic trades: a team that needs what I have to spare and has what I need. Make concrete offers (1-for-1 or 2-for-1), say why that manager would accept, and what each does to my category ranks."],
+  ["Season strategy", "Assess my team as a season-long project: which categories to build around, whether to punt any, how the standings and my division race look, and what to do over the next 2-3 weeks (schedule, next opponent, acquisitions) to improve my playoff seed."],
 ];
 let briefText = "";
 
@@ -1487,7 +1513,7 @@ function renderAsk() {
   return card(
     "Questions for ChatGPT",
     true,
-    h("p", { class: "note" }, "Each button copies a ready question together with the short report (only what today's decisions need, a few thousand characters, well within what ChatGPT reads) to the clipboard: paste it into ChatGPT and send. The copied text shows below. The full report is for a deeper look."),
+    h("p", { class: "note" }, "Each button copies a question together with the manager brief (standings, category map, matchup, opponent, roster, a wide free agent pool, trade market and season picture; well within what ChatGPT reads) to the clipboard: paste it into ChatGPT and send. The copied text shows below."),
     h("div", { class: "actions ask-row" }, buttons),
     h("div", { id: "ask-status", class: "status", role: "status", "aria-live": "polite" }),
     h("details", {}, h("summary", { id: "brief-size" }, briefSize()), area)
@@ -1495,7 +1521,7 @@ function renderAsk() {
 }
 
 function briefSize() {
-  return briefText ? `Short report: ${briefText.length.toLocaleString()} characters (show)` : "Short report: loading...";
+  return briefText ? `Manager brief: ${briefText.length.toLocaleString()} characters (show)` : "Manager brief: loading...";
 }
 
 function renderReport() {
@@ -1600,7 +1626,7 @@ function render(view, demo) {
     matchup: [renderMatchup(view), renderTrend(view), renderByDay(view), renderRecap(view), renderTargets(view), renderWhatIf(view), renderGameCounts(view), renderWeekGrid(view), renderStrategy(view), renderAccuracy(view), renderSchedule(view), renderStreamPlan(view), renderSimulator(view), renderNextMatchup(view)],
     roster: [renderMyRoster(view), renderAdvanced(view)],
     wire: [renderPickups(view), renderHot(view), renderFreeAgents(view), renderTransactions(view), renderPopular(view)],
-    league: [renderSeasonOutlook(view), renderPunt(view), renderHabits(view), renderStrength(view), renderSeason(view), renderTrade(view), renderTeams(view)],
+    league: [renderStandings(view), renderSeason(view), renderSeasonOutlook(view), renderPunt(view), renderHabits(view), renderStrength(view), renderTrade(view), renderTeams(view)],
     rankings: [renderRankings(view)],
     report: [renderAsk(), renderReport()],
     setup: STATIC ? [] : [renderSettings()],
@@ -1641,7 +1667,8 @@ async function loadReport() {
 
 async function loadState() {
   if (STATIC) {
-    $("refresh").hidden = true;
+    // On GitHub Pages, Refresh starts the workflow that reads ESPN.
+    $("refresh").hidden = !STATIC.repo;
     render(STATIC.view, STATIC.demo);
     return;
   }
@@ -1652,6 +1679,7 @@ async function loadState() {
 }
 
 async function refresh() {
+  if (STATIC) return refreshHosted();
   const button = $("refresh");
   button.disabled = true;
   setStatus("Reading the league from ESPN... this takes a few seconds.");
@@ -1669,6 +1697,70 @@ async function refresh() {
   } finally {
     button.disabled = false;
   }
+}
+
+// The hosted page has no server: it asks GitHub to run the workflow that
+// reads ESPN and publishes the page, then reloads once the new data is up.
+// That takes a GitHub token with Actions read/write on this repository
+// only, kept in this browser alone.
+const TOKEN_KEY = "github-token";
+let refreshPoll = null;
+
+async function refreshHosted() {
+  const token = recall(TOKEN_KEY);
+  if (!token) return askForToken();
+  const button = $("refresh");
+  button.disabled = true;
+  setStatus("Asking GitHub to read the league from ESPN...");
+  try {
+    const res = await fetch(`https://api.github.com/repos/${STATIC.repo}/actions/workflows/${STATIC.workflow}/dispatches`, {
+      method: "POST",
+      headers: { Authorization: "Bearer " + token, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" },
+      body: JSON.stringify({ ref: STATIC.ref || "main" }),
+    });
+    if (res.status === 401 || res.status === 403 || res.status === 404) {
+      button.disabled = false;
+      askForToken(`GitHub refused the token (HTTP ${res.status}): it may have expired or lack Actions read/write on ${STATIC.repo}. Paste a new one.`);
+      return;
+    }
+    if (!res.ok) throw new Error("HTTP " + res.status);
+  } catch (err) {
+    button.disabled = false;
+    setStatus("Could not reach GitHub: " + err.message, "error");
+    return;
+  }
+  const started = Date.now();
+  setStatus("Refresh started: new data in about 1-2 minutes. This page reloads by itself.", "ok");
+  clearInterval(refreshPoll);
+  refreshPoll = setInterval(() => {
+    if (Date.now() - started > 10 * 60 * 1000) {
+      clearInterval(refreshPoll);
+      button.disabled = false;
+      setStatus(`No new data after 10 minutes: see github.com/${STATIC.repo}/actions.`, "error");
+      return;
+    }
+    checkForNewData();
+  }, 15 * 1000);
+}
+
+function askForToken(message) {
+  const input = h("input", { type: "password", placeholder: "github_pat_...", autocomplete: "off", "aria-label": "GitHub token" });
+  const save = h("button", { type: "button", class: "primary" }, "Save and refresh");
+  const cancel = h("button", { type: "button" }, "Cancel");
+  save.addEventListener("click", () => {
+    const value = input.value.trim();
+    if (!value) return;
+    remember(TOKEN_KEY, value);
+    refreshHosted();
+  });
+  cancel.addEventListener("click", () => setStatus(""));
+  const el = $("status");
+  el.className = "status token-form";
+  el.replaceChildren(
+    h("p", {}, message || "To refresh from this page, it needs a GitHub token once. On GitHub: Settings, Developer settings, Personal access tokens, Fine-grained tokens, Generate new token. Repository access: only " + STATIC.repo + "; permissions: Actions, read and write. Paste it here: it stays in this browser only."),
+    h("div", { class: "actions" }, input, save, cancel)
+  );
+  input.focus();
 }
 
 function copyReport() {

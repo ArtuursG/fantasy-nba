@@ -668,7 +668,8 @@ def build_view(
 
 
 def _season_standings(ctx: Context) -> list[dict] | None:
-    """Each team's actual season-to-date category totals from ESPN, ranked."""
+    """The standings as ESPN shows them (playoff seed order, division, games
+    back) with each team's actual season-to-date category totals, ranked."""
     snap = ctx.snap
     teams = [t for t in snap.teams if t.season_stats]
     if not teams:
@@ -683,19 +684,43 @@ def _season_standings(ctx: Context) -> list[dict] | None:
             )
             ranks[team_id][cat] = better + 1
     opp_id = ctx.opponent_id(snap.my_team_id)
-    rows = [
-        {
-            "team": t.name,
-            "is_me": t.id == snap.my_team_id,
-            "is_opp": t.id == opp_id,
-            "record": f"{t.wins}-{t.losses}-{t.ties}",
-            "values": {c: t.season_stats.get(c) for c in cats},
-            "ranks": ranks[t.id],
-            "avg_rank": round(sum(ranks[t.id].values()) / max(len(ranks[t.id]), 1), 1),
-        }
-        for t in teams
-    ]
-    return sorted(rows, key=lambda r: r["avg_rank"])
+
+    def pct(t: Team) -> float:
+        games = t.wins + t.losses + t.ties
+        return (t.wins + 0.5 * t.ties) / games if games else 0.0
+
+    leaders: dict[int | None, Team] = {}
+    for t in teams:
+        best = leaders.get(t.division_id)
+        if best is None or (t.wins - t.losses) > (best.wins - best.losses):
+            leaders[t.division_id] = t
+    rows = []
+    for t in teams:
+        lead = leaders[t.division_id]
+        rows.append(
+            {
+                "team": t.name,
+                "abbrev": t.abbrev,
+                "is_me": t.id == snap.my_team_id,
+                "is_opp": t.id == opp_id,
+                "seed": t.playoff_seed,
+                "division": snap.league.divisions.get(t.division_id)
+                if t.division_id is not None
+                else None,
+                "wins": t.wins,
+                "losses": t.losses,
+                "ties": t.ties,
+                "pct": round(pct(t), 3),
+                "gb": ((lead.wins - t.wins) + (t.losses - lead.losses)) / 2,
+                "record": f"{t.wins}-{t.losses}-{t.ties}",
+                "values": {c: t.season_stats.get(c) for c in cats},
+                "ranks": ranks[t.id],
+                "avg_rank": round(sum(ranks[t.id].values()) / max(len(ranks[t.id]), 1), 1),
+            }
+        )
+    return sorted(
+        rows, key=lambda r: (r["seed"] or 99, -r["pct"], r["avg_rank"])
+    )
 
 
 def _lineup_text(slots: dict[int, int]) -> str:

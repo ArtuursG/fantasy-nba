@@ -2,13 +2,14 @@
 
 The page is the same as `fantasy serve`; the data the server would answer
 with (the view and both report versions) goes into static/data.js instead.
-Refresh, settings and the trade evaluator need the server, so the page hides
-them when it finds that file.
+Settings and the trade evaluator need the server, so the page hides them
+when it finds that file; Refresh asks GitHub to run the workflow instead.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
@@ -22,6 +23,9 @@ HEADERS = """/*
   Referrer-Policy: no-referrer
   X-Content-Type-Options: nosniff
 """
+
+
+WORKFLOW = "daily.yml"
 
 
 class ExportError(Exception):
@@ -41,6 +45,11 @@ def export_site(app: FantasyApp, out: Path) -> Path:
             "brief": app.report(brief=True),
         },
         "exported_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        # Set when GitHub Actions builds the page: the page's Refresh starts
+        # this workflow again.
+        "repo": os.environ.get("GITHUB_REPOSITORY"),
+        "workflow": WORKFLOW,
+        "ref": os.environ.get("GITHUB_REF_NAME") or "main",
     }
     if out.exists():
         shutil.rmtree(out)
