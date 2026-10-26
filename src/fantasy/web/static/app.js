@@ -1569,6 +1569,7 @@ Rules:
 - The brief's model suggestions are inputs, not answers. Check them against the whole free agent pool, ESPN roster %, minutes and role, and say so when you disagree.
 - Keep one-matchup streams apart from season-long adds. Acquisitions reset every matchup, so unused ones are wasted, but never drop a player whose season value is clearly above the pickup's.
 - Early in the season samples are small: weigh ESPN projections, minutes and role over a few box scores.
+- For every pickup, say why his role or minutes changed. If it is a fill-in for an injured teammate, say how long the window lasts (his expected return, games until then), what happens to the value when he is back, and whether it is worth an acquisition for that window only.
 - Be decisive and specific: names, numbers, days. Pick one option instead of listing several; no generic advice.
 - If my message has a question, answer it first, then add only what changed in the plan.`;
 }

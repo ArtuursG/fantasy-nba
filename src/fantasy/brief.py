@@ -36,6 +36,10 @@ NOTES = """\
 - Early in the season samples are small: weigh ESPN's projection, minutes,
   role and how widely a player is rostered across ESPN (%ROST) next to a few
   box scores.
+- "Fill-in for X" means the minutes come from a teammate's injury: the note
+  gives his expected return, the games until then and the role with and
+  without him. Treat such a player as a pickup for that window, not for the
+  season, unless the role looks likely to stick.
 - Start from ROSTER SITUATION: who is out and for how long, what that costs
   in categories, and the way out. Keep long-term moves (players worth holding
   all season) apart from one-matchup streams, and say whether this week is
@@ -206,6 +210,7 @@ def _situation(view: dict, add) -> None:
                         if c_full and r["c_eligible"]
                         else ""
                     )
+                    + _fill_in_note(r)
                     for r in long_term[:LONG_TERM_TARGETS]
                 )
             ]
@@ -284,6 +289,17 @@ def _since(view: dict, add) -> None:
                 + " -> ".join(f"{day} {pt['p'] * 100:.0f}%" for day, pt in by_day.items())
             ]
         )
+
+
+def _fill_in_note(r: dict) -> str:
+    """Marks a pickup whose value rests on a teammate's injury."""
+    parts = []
+    for f in r.get("fill_in") or []:
+        when = f"back ~{f['expected_return'][5:]}" if f.get("expected_return") else "return unknown"
+        if f.get("games_away") is not None:
+            when += f", {f['games_away']} games"
+        parts.append(f"{f['player']} ({when})")
+    return f" [temporary: fill-in for {'; '.join(parts)}]" if parts else ""
 
 
 def _label(row: dict) -> str:
@@ -546,7 +562,7 @@ def _free_agents(view: dict, add) -> None:
                         _line(r.get("proj_line") or {}),
                         _owned(r),
                         signed(r["value"], 2),
-                        "; ".join(x for x in r["reasons"] if "usable game" not in x)[:160] or "-",
+                        "; ".join(x for x in r["reasons"] if "usable game" not in x)[:260] or "-",
                     ]
                     for r in fas[:FREE_AGENTS]
                 ),

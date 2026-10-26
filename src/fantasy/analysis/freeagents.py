@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 from fantasy.analysis.context import Context
-from fantasy.analysis.roles import RoleInfo
+from fantasy.analysis.roles import RoleInfo, opportunity_text
 from fantasy.analysis.schedule import DayPlan, candidate_days
 from fantasy.analysis.stats import average
 from fantasy.espn.constants import C_SLOT, UNAVAILABLE_STATUSES
@@ -37,6 +37,31 @@ def _out_for_now(status: str, expected_return: str | None, today: date) -> bool:
     if status not in UNAVAILABLE_STATUSES:
         return False
     return not (expected_return and date.fromisoformat(expected_return) <= today + RETURN_SOON)
+
+
+def _real_fill_ins(items: list[dict]) -> list[dict]:
+    """Leaves out a teammate's injury that hasn't brought more minutes."""
+    return [
+        i
+        for i in items
+        if not (
+            i.get("without_games")
+            and i.get("with_min") is not None
+            and i["without_min"] - i["with_min"] <= -3
+        )
+    ]
+
+
+def _fill_in_bonus(items: list[dict]) -> float:
+    """A teammate's injury counts for more the longer it lasts: a few games
+    of extra minutes are a stream, a month is a real role."""
+    if not items:
+        return 0.0
+    away = [i.get("games_away") for i in items]
+    longest = max((a for a in away if a is not None), default=None)
+    if longest is None:
+        return 0.6  # return date unknown
+    return 0.3 if longest <= 3 else 0.6 if longest <= 10 else 0.9
 
 
 def rank_free_agents(
@@ -67,7 +92,7 @@ def rank_free_agents(
             + 0.25 * form
             + 0.12 * _clamp(info.min_delta or 0.0, -10, 10)
             + (1.0 if info.new_starter else 0.0)
-            + (0.8 if opps.get(player_id) else 0.0)
+            + _fill_in_bonus(_real_fill_ins(opps.get(player_id, [])))
             + (0.5 if info.returned else 0.0)
             + 0.06 * _clamp(player.percent_change or 0.0, -10, 25)
             + 0.04 * _clamp((player.percent_owned or 0.0) - MARKET_PIVOT, -25, 50)
@@ -86,7 +111,7 @@ def rank_free_agents(
         if info.new_starter:
             reasons.append(f"New starter ({info.starts_last5} of last {len(info.last5)})")
         for item in opps.get(player_id, []):
-            reasons.append(f"Opportunity: {item['player']} out (+{item['bump']:.0f} MIN est.)")
+            reasons.append(opportunity_text(item))
         if info.returned:
             reasons.append(f"Back from injury ({info.returned[0]} games missed)")
         if (player.percent_change or 0) >= 3:
@@ -122,6 +147,14 @@ def rank_free_agents(
                 "player_id": player_id,
                 "score": round(score, 2),
                 "reasons": reasons,
+                "fill_in": [
+                    {
+                        "player": i["player"],
+                        "expected_return": i.get("expected_return"),
+                        "games_away": i.get("games_away"),
+                    }
+                    for i in _real_fill_ins(opps.get(player_id, []))
+                ],
                 "games_remaining": len(with_game),
                 "usable": len(usable),
                 "usable_days": [day_label(p.date) for p in usable],

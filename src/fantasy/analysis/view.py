@@ -457,6 +457,7 @@ def build_view(
             {
                 "score": item["score"],
                 "reasons": item["reasons"],
+                "fill_in": item.get("fill_in", []),
                 "usable_remaining": item["usable"],
                 "usable_days": item["usable_days"],
             }

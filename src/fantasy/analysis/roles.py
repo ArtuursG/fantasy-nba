@@ -5,12 +5,12 @@ schedule and the previous snapshot."""
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import date, timedelta
 from statistics import fmean
 
 from fantasy.analysis.context import Context
 from fantasy.analysis.schedule import is_available, positions
-from fantasy.analysis.stats import played_games
+from fantasy.analysis.stats import average, played_games
 from fantasy.espn.constants import HEALTH_LABELS, UNAVAILABLE_STATUSES
 from fantasy.models import Game, Player, Snapshot
 from fantasy.timeutil import parse_iso
@@ -172,7 +172,11 @@ def all_roles(ctx: Context) -> dict[int, RoleInfo]:
 def opportunities(ctx: Context, roles: dict[int, RoleInfo]) -> dict[int, list[dict]]:
     """Healthy teammates who share a position with an injured rotation
     player. The minutes estimate splits the injured player's minutes among
-    them (plus one for the rest of the bench), capped at 10."""
+    them (plus one for the rest of the bench), capped at 10. Each also says
+    how long the chance lasts (the injured player's expected return and the
+    team games until then) and what the teammate did with him and without
+    him in the games logged; with no games beside him, ESPN's projection
+    stands for the normal role."""
     today = ctx.now.date()
     by_team: dict[int, list[Player]] = {}
     for player in ctx.snap.players.values():
@@ -199,17 +203,83 @@ def opportunities(ctx: Context, roles: dict[int, RoleInfo]) -> dict[int, list[di
         if not rotation:
             continue
         bump = min(10.0, minutes / (len(rotation) + 1))
+        played_with = {g.sp for g in played_games(injured)}
+        games_away = _games_until(ctx, injured.pro_team_id, injured.expected_return)
         for mate in rotation:
-            found.setdefault(mate.id, []).append(
-                {
-                    "player": injured.name,
-                    "status": HEALTH_LABELS.get(injured.injury_status, injured.injury_status),
-                    "minutes": minutes,
-                    "missed": roles[injured.id].missed_now,
-                    "bump": bump,
-                }
-            )
+            item = {
+                "player": injured.name,
+                "status": HEALTH_LABELS.get(injured.injury_status, injured.injury_status),
+                "minutes": minutes,
+                "missed": roles[injured.id].missed_now,
+                "bump": bump,
+                "expected_return": injured.expected_return,
+                "games_away": games_away,
+            }
+            item.update(_with_and_without(ctx, mate, played_with))
+            found.setdefault(mate.id, []).append(item)
     return found
+
+
+def _games_until(ctx: Context, team_id: int, expected_return: str | None) -> int | None:
+    """The team's games from now until the expected return (None: unknown)."""
+    if not expected_return:
+        return None
+    back = date.fromisoformat(expected_return)
+    return sum(
+        1
+        for g in ctx.calendar.by_team.get(team_id, [])
+        if parse_iso(g.start) > ctx.now and parse_iso(g.start).date() < back
+    )
+
+
+def _with_and_without(ctx: Context, mate: Player, played_with: set[int]) -> dict:
+    games = played_games(mate)
+    beside = [g for g in games if g.sp in played_with]
+    alone = [g for g in games if g.sp not in played_with]
+    out: dict = {"without_games": len(alone), "with_games": len(beside)}
+    if alone:
+        line = average(alone)
+        out["without_min"] = round(line.min, 1)
+        out["without_value"] = round(ctx.valuation.mean(line, ctx.punt), 2)
+    if beside:
+        line = average(beside)
+        out["with_min"] = round(line.min, 1)
+        out["with_value"] = round(ctx.valuation.mean(line, ctx.punt), 2)
+        out["with_basis"] = "with him"
+    else:
+        projected = mate.stats.get("projected")
+        if projected is not None and projected.min > 0:
+            out["with_min"] = round(projected.min, 1)
+            out["with_value"] = round(ctx.valuation.mean(projected, ctx.punt), 2)
+            out["with_basis"] = "ESPN projection"
+    return out
+
+
+def opportunity_text(item: dict) -> str:
+    """One line on a fill-in chance: whose minutes, for how long, and the
+    role with and without him."""
+    back = item.get("expected_return")
+    away = item.get("games_away")
+    if back:
+        window = f"back ~{back[5:]}" + (f", {away} team games away" if away is not None else "")
+    else:
+        window = "return date unknown"
+    text = f"Fill-in for {item['player']} ({item['status']}, {window})"
+    if item.get("without_games") and item.get("with_min") is not None:
+        text += (
+            f": {item['without_min']:.0f} MIN without him vs {item['with_min']:.0f} "
+            f"{'with him' if item.get('with_basis') == 'with him' else 'projected'}"
+        )
+        if item.get("without_value") is not None and item.get("with_value") is not None:
+            text += f" (value {item['without_value']:+.2f} vs {item['with_value']:+.2f})"
+        gain = item["without_min"] - item["with_min"]
+        if gain >= 3:
+            text += "; the role shrinks when he returns"
+        elif gain <= -3:
+            text += "; no bigger role without him so far"
+    else:
+        text += f": about +{item['bump']:.0f} MIN while he is out"
+    return text
 
 
 def _fmt_minutes(values: list[float]) -> str:
@@ -281,11 +351,7 @@ def player_alert(
         kinds.append("lost_start")
 
     for item in opportunity:
-        missed = f", missed {item['missed']} straight" if item["missed"] else ""
-        lines.append(
-            f"Opportunity: {item['player']} ({item['status']}{missed}, "
-            f"{item['minutes']:.0f} MIN) plays his position; expected minutes +{item['bump']:.0f}"
-        )
+        lines.append(opportunity_text(item))
         kinds.append("teammate_out")
 
     if owner in ("FA", "WA") and (player.percent_change or 0) >= ADD_SURGE:

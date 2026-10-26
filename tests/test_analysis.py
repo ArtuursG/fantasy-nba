@@ -137,7 +137,8 @@ def test_free_agent_ranking_puts_the_opportunity_near_the_top(view, world):
     assert len(ids) == 50
     assert ids.index(world.free_agents[0]) < 5
     backup = view["free_agents"][ids.index(world.free_agents[0])]
-    assert any(r.startswith("Opportunity") for r in backup["reasons"])
+    assert any(r.startswith("Fill-in for") for r in backup["reasons"])
+    assert backup["fill_in"] and backup["fill_in"][0]["player"]
     assert backup["projected_min"] > backup["espn_projected_min"] + 8
     for row in view["streamers"]:
         assert row["usable_remaining"] > 0
