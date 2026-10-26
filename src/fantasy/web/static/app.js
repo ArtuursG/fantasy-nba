@@ -1446,7 +1446,12 @@ function renderSettings() {
 }
 
 // Ready questions for ChatGPT: each copies the question plus the brief.
-const INTRO = "Below is today's manager brief for my ESPN fantasy basketball team, from my own analytics page. Read all of it before answering. Answer in Latvian.";
+// ChatGPT turns a long paste into an attachment ("Pasted text") and treats
+// what is in it as material, not as the question. So the brief and the
+// question are copied one after the other: the brief becomes the
+// attachment, the question the message.
+const INTRO = "The attached text is today's manager brief for my ESPN fantasy basketball team, from my own analytics page. Read all of it, then answer this:";
+const OUTRO = "Answer in Latvian.";
 const PROMPTS = [
   ["Weekly game plan", "Build my plan for the rest of this matchup. Decide which categories to target and which to concede against this opponent, how many of my remaining acquisitions to use and on which days, and which lineup and roster moves follow from that. Search the whole free agent pool, not only the model's top names. Order the moves by impact, one line of reasoning each."],
   ["Roster upgrade", "Look past this week. Which 1-3 spots on my roster are the weakest for the rest of the season, and which free agents or waiver players are real upgrades given my category strengths and weaknesses? Keep long-term adds apart from one-week streams, and name the drop for each add."],
@@ -1456,28 +1461,47 @@ const PROMPTS = [
 ];
 let briefText = "";
 
-// Copies the question and the brief; nothing opens, paste it wherever.
-function copyPrompt(question) {
+// Step 1 copies the brief (with the question at its end, for context);
+// step 2 copies the question to send as the message.
+function copyPrompt(label, question) {
   const report = briefText || reportText;
   if (!report) {
     askStatus("The report is still loading: try again in a moment.", "");
     return;
   }
-  const text = `${INTRO}\n\n${question}\n\n${report}`;
+  const text = `${report}\n---\nThe manager's question (also in the message): ${question}\n`;
+  const message = `${INTRO} ${question} ${OUTRO}`;
   const area = $("brief-text");
-  if (area) {
-    area.value = text;
-    area.closest("details").open = true;
-  }
-  const label = $("brief-size");
-  if (label) label.textContent = `Copied text: ${text.length.toLocaleString()} characters`;
+  if (area) area.value = text;
+  const size = $("brief-size");
+  if (size) size.textContent = `Copied brief: ${text.length.toLocaleString()} characters (show)`;
+  showNextStep(label, message);
   try {
     copyText(text).then((ok) => askStatus(ok
-      ? `Copied (${text.length.toLocaleString()} characters): paste it into ChatGPT and send.`
-      : "The browser blocked copying: select the text below and copy it yourself.", ok ? "ok" : ""));
+      ? "Step 1 of 2: brief copied. Paste it into ChatGPT: it shows up as an attachment."
+      : "The browser blocked copying: open the brief below, select it and copy it yourself.", ok ? "ok" : ""));
   } catch (e) {
     askStatus("Copying failed: " + e.message, "");
   }
+}
+
+function showNextStep(label, message) {
+  const box = $("ask-next");
+  if (!box) return;
+  const copy = h("button", { type: "button", class: "primary" }, "Copy question");
+  copy.addEventListener("click", () => {
+    copyText(message).then((ok) => askStatus(ok
+      ? "Step 2 of 2: question copied. Paste it into the message box under the attachment and send."
+      : "The browser blocked copying: select the question above and copy it yourself.", ok ? "ok" : ""));
+  });
+  const text = h("textarea", { class: "report-text question", readonly: true, spellcheck: "false", "aria-label": "Question" });
+  text.value = message;
+  box.replaceChildren(
+    h("p", {}, h("strong", {}, `Step 2 · ${label}: `), "after pasting the brief, copy the question and paste it as your message."),
+    text,
+    h("div", { class: "actions" }, copy)
+  );
+  box.hidden = false;
 }
 
 function askStatus(text, kind) {
@@ -1509,7 +1533,7 @@ function copyText(text) {
 function renderAsk() {
   const buttons = PROMPTS.map(([label, question]) => {
     const b = h("button", { type: "button", class: "ask" }, label);
-    b.addEventListener("click", () => copyPrompt(question));
+    b.addEventListener("click", () => copyPrompt(label, question));
     return b;
   });
   const area = h("textarea", { id: "brief-text", class: "report-text short", readonly: true, spellcheck: "false", "aria-label": "Copied text" });
@@ -1517,9 +1541,10 @@ function renderAsk() {
   return card(
     "Questions for ChatGPT",
     true,
-    h("p", { class: "note" }, "Each button copies a question together with the manager brief (standings, category map, matchup, opponent, roster, a wide free agent pool, trade market and season picture; well within what ChatGPT reads) to the clipboard: paste it into ChatGPT and send. The copied text shows below."),
+    h("p", { class: "note" }, "Two steps, because ChatGPT treats a long paste as an attachment and doesn't take a question inside it as yours. 1: press a question: the manager brief (standings, category map, matchup, opponent, roster, a wide free agent pool, trade market, season picture) is copied; paste it into ChatGPT. 2: press Copy question and paste that as the message, then send."),
     h("div", { class: "actions ask-row" }, buttons),
     h("div", { id: "ask-status", class: "status", role: "status", "aria-live": "polite" }),
+    h("div", { id: "ask-next", class: "ask-next", hidden: true }),
     h("details", {}, h("summary", { id: "brief-size" }, briefSize()), area)
   );
 }
