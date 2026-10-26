@@ -10,6 +10,8 @@ repeating them.
 
 from __future__ import annotations
 
+from datetime import date
+
 from fantasy.report import num, pct, signed, table
 
 FREE_AGENTS = 15
@@ -17,6 +19,10 @@ STREAMERS = 6
 MODEL_MOVES = 3
 TRADE_IDEAS = 3
 NEED_TARGETS = 6
+LONG_TERM_TARGETS = 6
+# Roster strength rank (of the league) from which a category counts as a need.
+NEED_RANK = 7
+UNAVAILABLE = {"OUT", "Out", "IR", "SUSPENSION", "Suspended"}
 
 NOTES = """\
 ## NOTES FOR THE ASSISTANT
@@ -30,6 +36,10 @@ NOTES = """\
 - Early in the season samples are small: weigh ESPN's projection, minutes,
   role and how widely a player is rostered across ESPN (%ROST) next to a few
   box scores.
+- Start from ROSTER SITUATION: who is out and for how long, what that costs
+  in categories, and the way out. Keep long-term moves (players worth holding
+  all season) apart from one-matchup streams, and say whether this week is
+  worth chasing or the season matters more.
 - Give a short, prioritised plan with the reasoning behind each move; say
   "hold" when nothing is worth an acquisition."""
 
@@ -69,12 +79,13 @@ def render_brief(view: dict) -> str:
         add(
             [
                 f"- Playoffs: top {so['playoff_teams']} of {m['teams']}; "
-                f"{so['matchups_left']} regular-season matchups left after this one; playoff "
+                f"{so['matchups_left']} regular-season matchups left, this one included; playoff "
                 f"weeks {', '.join(str(w) for w in so['playoff_weeks']) or '-'}.",
             ]
         )
     add([f"- My team: {m['my_team']}. Punting: {punt}."])
 
+    _situation(view, add)
     _standings(view, add)
     _category_map(view, add)
     _todo(view, add)
@@ -87,6 +98,155 @@ def render_brief(view: dict) -> str:
     _season(view, add)
     _activity(view, add)
     return "\n".join(out).strip() + "\n"
+
+
+def _situation(view: dict, add) -> None:
+    """Injuries, what they cost, the needs that leave, and the two kinds of
+    move out of it: long-term pickups and one-matchup streams."""
+    me = view.get("my_team")
+    if not me:
+        return
+    m = view["meta"]
+    today = date.fromisoformat(m["date"])
+    add(["", "## ROSTER SITUATION (read this first)"])
+
+    hurt = [r for r in me["roster"] if r["health"] not in ("Healthy", None)]
+    if hurt:
+        add(["Injuries:"])
+    for r in sorted(hurt, key=lambda r: -(r.get("value") or 0)):
+        back = r.get("expected_return")
+        when = ""
+        if back:
+            days = (date.fromisoformat(back) - today).days
+            when = f", back ~{back[5:]}" + (
+                f" (about {round(days / 7)} weeks)" if days > 10 else ""
+            )
+        missing = r["games_remaining"] - r.get("usable_remaining", r["games_remaining"])
+        this_week = (
+            f"misses {missing} of {r['games_remaining']} games this matchup"
+            if r["games_remaining"]
+            else "no games left this matchup"
+        )
+        gives = ", ".join(
+            f"{c} {signed(z, 2)}"
+            for c, z in sorted((r.get("cat_values") or {}).items(), key=lambda x: -x[1])[:3]
+            if z > 0
+        )
+        add(
+            [
+                f"- {r['name']} {r['positions']} {r['pro_team']}: {r['health']}{when}; "
+                f"{'in the IR slot' if r['slot'] == 'IR' else 'slot ' + (r['slot'] or '-')}; "
+                f"{this_week}. Value {signed(r['value'], 2)} (#{r.get('rank') or '-'}), "
+                f"{r.get('roster_pct') or 0:.0f}% rostered across ESPN"
+                + (f"; his best categories: {gives}" if gives else "")
+                + "."
+            ]
+        )
+    ir = view.get("my_ir")
+    if ir and ir.get("slots"):
+        names = ", ".join(p["name"] for p in ir["players"]) or "empty"
+        add([f"IR: {ir['slots']} slot(s), now {names}."] + [f"- {f}" for f in ir["flags"]])
+
+    ranks = (me.get("strength") or {}).get("ranks") or {}
+    if ranks:
+        needs = [c for c, r in sorted(ranks.items(), key=lambda x: -x[1]) if r >= NEED_RANK]
+        add(
+            [
+                "My roster's category ranks with healthy players only (1 best of "
+                f"{m['teams']}): "
+                + ", ".join(f"{c} {r}" for c, r in ranks.items())
+                + f". Needs: {', '.join(needs) or 'none'}."
+            ]
+        )
+    else:
+        needs = []
+
+    drops = (view.get("moves") or {}).get("drop_candidates") or []
+    by_name = {r["name"]: r for r in me["roster"]}
+    if drops:
+        add(
+            [
+                "Weakest long-term spots (model drop candidates): "
+                + "; ".join(
+                    f"{n} (value {signed(by_name[n]['value'], 2)}, "
+                    f"{by_name[n].get('roster_pct') or 0:.0f}% rostered)"
+                    if n in by_name
+                    else n
+                    for n in drops
+                )
+                + "."
+            ]
+        )
+
+    pool = [
+        r
+        for r in view.get("free_agents") or []
+        if r["health"] not in UNAVAILABLE and r.get("injury_status") not in ("OUT", "SUSPENSION")
+    ]
+
+    def fit(r: dict) -> float:
+        z = r.get("cat_values") or {}
+        return sum(max(z.get(c, 0.0), 0.0) for c in needs)
+
+    long_term = sorted(pool, key=lambda r: (r["value"], r.get("roster_pct") or 0), reverse=True)
+    if long_term:
+        add(
+            [
+                "Long-term pickup candidates (season-long value per game; fit = their "
+                "strength in my needs): "
+                + "; ".join(
+                    f"{r['name']} {r['pro_team']} {_availability(r)}, value "
+                    f"{signed(r['value'], 2)}, fit {fit(r):.1f}, "
+                    f"{r.get('roster_pct') or 0:.0f}% rostered"
+                    for r in long_term[:LONG_TERM_TARGETS]
+                )
+            ]
+        )
+    streamers = view.get("streamers") or []
+    if streamers:
+        add(
+            [
+                "Streams that only help this matchup (games on days I have an open slot): "
+                + "; ".join(
+                    f"{r['name']} {r['pro_team']} {len(r.get('usable_days') or [])} games"
+                    for r in streamers[:STREAMERS]
+                )
+            ]
+        )
+
+    mu = view.get("matchup")
+    plan = view.get("stream_plan")
+    so = view.get("season_outlook")
+    acq = view.get("acquisitions") or {}
+    parts = []
+    if mu:
+        line = f"this matchup's win chance {mu['outlook']['p_win_matchup'] * 100:.0f}%"
+        if plan and plan.get("steps"):
+            line += (
+                f" ({plan['final']['p_win_matchup'] * 100:.0f}% with the model's streaming "
+                f"plan of {len(plan['steps'])} pickup(s))"
+            )
+        parts.append(line)
+    mine = next((r for r in (so or {}).get("rows", []) if r["is_me"]), None)
+    if mine:
+        parts.append(
+            f"playoff chance {mine['playoff_pct'] * 100:.0f}% (top {so['playoff_teams']} of "
+            f"{m['teams']} get in), average seed {mine['avg_seed']}"
+        )
+    if acq.get("remaining") is not None:
+        parts.append(
+            f"{acq['remaining']} acquisitions left this matchup; they don't carry over, so "
+            "a stream costs nothing as long as the player dropped is replaceable"
+        )
+    if parts:
+        add(
+            [
+                "Short term against the season: "
+                + "; ".join(parts)
+                + ". Standings count categories, so every category won this week counts "
+                "toward the seed even in a lost matchup."
+            ]
+        )
 
 
 def _label(row: dict) -> str:

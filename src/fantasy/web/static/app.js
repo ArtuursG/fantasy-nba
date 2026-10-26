@@ -1453,6 +1453,8 @@ function renderSettings() {
 const INTRO = "The attached text is today's manager brief for my ESPN fantasy basketball team, from my own analytics page. Read all of it, then answer this:";
 const OUTRO = "Answer in Latvian.";
 const PROMPTS = [
+  ["Manager review", "Give me a full manager review. Start with a prioritised to-do list, then the reasoning: my roster situation (who is out and for how long, what it costs in categories, the IR slot), this matchup (which categories to chase or concede, whether it is worth chasing at all), long-term roster moves against one-matchup streams with the drop for each, and any trade worth offering."],
+  ["Roster situation", "Start from ROSTER SITUATION. Who is out and for how long, and what does it cost me in categories? Is the IR slot used best? What is the way out: which long-term pickups replace the lost value, which streams only help this matchup, and who to drop for each? Then decide: chase this matchup or build for the season, and why. Finish with a prioritised to-do list."],
   ["Weekly game plan", "Build my plan for the rest of this matchup. Decide which categories to target and which to concede against this opponent, how many of my remaining acquisitions to use and on which days, and which lineup and roster moves follow from that. Search the whole free agent pool, not only the model's top names. Order the moves by impact, one line of reasoning each."],
   ["Roster upgrade", "Look past this week. Which 1-3 spots on my roster are the weakest for the rest of the season, and which free agents or waiver players are real upgrades given my category strengths and weaknesses? Keep long-term adds apart from one-week streams, and name the drop for each add."],
   ["Tonight's lineup", "Check today's lineup and injuries: does anything need to change before tip-off? If everything is fine, say so in one sentence."],
@@ -1461,7 +1463,7 @@ const PROMPTS = [
 ];
 let briefText = "";
 
-// Step 1 copies the brief (with the question at its end, for context);
+// Step 1 copies the brief (with the question on top, which is often enough);
 // step 2 copies the question to send as the message.
 function copyPrompt(label, question) {
   const report = briefText || reportText;
@@ -1469,7 +1471,7 @@ function copyPrompt(label, question) {
     askStatus("The report is still loading: try again in a moment.", "");
     return;
   }
-  const text = `${report}\n---\nThe manager's question (also in the message): ${question}\n`;
+  const text = `QUESTION FROM THE MANAGER (answer it from the brief below): ${question} ${OUTRO}\n\n${report}`;
   const message = `${INTRO} ${question} ${OUTRO}`;
   const area = $("brief-text");
   if (area) area.value = text;
@@ -1556,10 +1558,13 @@ function briefSize() {
 function renderReport() {
   const area = h("textarea", { id: "report-text", class: "report-text", readonly: true, spellcheck: "false", "aria-label": "Daily report text" });
   area.value = reportText;
+  const copy = h("button", { type: "button" }, "Copy full report");
+  copy.addEventListener("click", copyReport);
   return card(
-    "Daily report",
+    "Full report",
     true,
     h("p", { class: "note", id: "report-size" }, reportSize()),
+    h("div", { class: "actions" }, copy),
     area
   );
 }
@@ -1567,7 +1572,7 @@ function renderReport() {
 function reportSize() {
   if (!reportText) return "Loading the report...";
   const compact = $("compact").checked ? "compact" : "full";
-  return `${reportText.length.toLocaleString()} characters, ${compact} version. This is exactly what COPY DAILY FANTASY REPORT puts on the clipboard.`;
+  return `${reportText.length.toLocaleString()} characters, ${compact} version: everything, for reading here or saving with Download .md. Too long to ask ChatGPT about well; the manager brief above is made for that.`;
 }
 
 const TABS = [
@@ -1831,18 +1836,26 @@ function askForToken(message) {
   input.focus();
 }
 
+// The header button: step 1 of the manager review, then the Report tab,
+// where step 2 (the question) waits.
+function copyForChatGPT() {
+  const [label, question] = PROMPTS[0];
+  copyPrompt(label, question);
+  location.hash = "#report";
+}
+
 function copyReport() {
   if (!reportText) return;
   copyText(reportText).then((ok) => {
     setStatus(ok
-      ? `Report copied (${reportText.length.toLocaleString()} characters). Paste it into ChatGPT.`
-      : "Copying was blocked: use Download .md or copy the text from the Report tab.", ok ? "ok" : "");
+      ? `Full report copied (${reportText.length.toLocaleString()} characters).`
+      : "Copying was blocked: use Download .md or copy the text by hand.", ok ? "ok" : "");
   });
 }
 
 window.addEventListener("hashchange", () => showTab(currentTab()));
 $("refresh").addEventListener("click", refresh);
-$("copy").addEventListener("click", copyReport);
+$("copy").addEventListener("click", copyForChatGPT);
 $("download").addEventListener("click", () => {
   if (!reportText) return;
   const date = (reportText.match(/^Date: (\S+)/m) || [])[1] || "report";

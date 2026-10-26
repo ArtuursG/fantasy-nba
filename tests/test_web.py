@@ -26,7 +26,7 @@ def server(tmp_path):
 
 def test_dashboard_refresh_and_report(server):
     page = httpx.get(server + "/")
-    assert page.status_code == 200 and "COPY DAILY FANTASY REPORT" in page.text
+    assert page.status_code == 200 and "COPY FOR CHATGPT" in page.text
     assert "Download .md" in page.text
     assert httpx.get(server + "/static/app.js").status_code == 200
     manifest = httpx.get(server + "/static/manifest.webmanifest")
