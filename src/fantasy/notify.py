@@ -1,4 +1,5 @@
-"""Telegram: a short message when the lineup needs attention, and the daily report file."""
+"""Telegram: a short message when the lineup or the streaming plan needs
+attention, and the daily report file."""
 
 from __future__ import annotations
 
@@ -84,6 +85,12 @@ def alert_text(view: dict, always: bool = False) -> str | None:
         i for i in (view.get("changes") or {}).get("injuries", []) if i["owner"] == "MY TEAM"
     ]
     lines += [f"Injury: {i['name']} {i['from']} -> {i['to']}" for i in injuries]
+    # The pickups the streaming plan wants next: the phone is where they get made.
+    pickups = [i for i in (view.get("actions") or {}).get("items", []) if i["kind"] == "pickup"]
+    lines += [f"{i['when']}: {i['text']} ({i['why']})" for i in pickups]
+    acquisitions = (view.get("stream_plan") or {}).get("acquisitions_left")
+    if pickups and acquisitions:
+        lines.append(f"{acquisitions} acquisition(s) left this matchup; they don't carry over.")
     if not lines and not always:
         return None
     header = f"{view['meta']['my_team'] or 'Fantasy'}: "

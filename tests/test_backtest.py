@@ -96,6 +96,10 @@ def test_backtest_scores_a_week_once_a_later_snapshot_shows_it_finished(today, t
     assert 0.0 <= score["categories"]["brier"] <= 1.0
     text = render_backtest(result)
     assert "rosters as they stand" in text and "By category" in text
+    plan = result["plan"]
+    assert plan["days"] >= 1 and plan["after"] >= plan["before"]
+    assert [week["period"] for week in plan["weeks"]] == [period]  # the finished week
+    assert "My streaming plan" in text and f"Week {period}, last look" in text
 
     store = SnapshotStore(tmp_path / "history.db")
     for snap in (today, later):

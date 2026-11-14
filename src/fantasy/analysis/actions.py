@@ -9,8 +9,10 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-# A pickup is suggested only when it moves the matchup this much.
+# A plan is put on the to-do list when it moves the matchup this much, in
+# expected categories or in the chance of winning it.
 MIN_PICKUP_GAIN = 0.15
+MIN_PLAN_WIN_GAIN = 0.03
 RECENT_HOURS = 36
 
 
@@ -35,16 +37,24 @@ def build_actions(view: dict) -> dict:
 
     plan = view.get("stream_plan")
     if plan and plan["steps"]:
-        step = plan["steps"][0]
-        if step["gain"] >= MIN_PICKUP_GAIN:
-            before = plan["base"]["p_win_matchup"]
+        before, after = plan["base"], plan["final"]
+        worth_it = (
+            after["expected_wins"] - before["expected_wins"] >= MIN_PICKUP_GAIN
+            or after["p_win_matchup"] - before["p_win_matchup"] >= MIN_PLAN_WIN_GAIN
+        )
+        # Every pickup due first, not only the best one: a plan of three
+        # works as a plan, and unused acquisitions are gone after the week.
+        due = [s for s in plan["steps"] if s.get("next", True)] if worth_it else []
+        for step in due:
             verb = "Claim" if step["waiver"] else "Add"
             items.append(
                 _item(
                     "pickup",
                     f"{verb} {step['add']} ({step['add_team']}), drop {step['drop']}",
-                    f"+{step['gain']:.1f} expected categories, win chance "
-                    f"{before * 100:.0f}% → {step['p_win_after'] * 100:.0f}%",
+                    f"+{step['gain']:.1f} expected categories; the plan of "
+                    f"{len(plan['steps'])} takes the win chance "
+                    f"{before['p_win_matchup'] * 100:.0f}% → "
+                    f"{after['p_win_matchup'] * 100:.0f}%",
                     step["day"],
                     player_id=step["add_id"],
                 )

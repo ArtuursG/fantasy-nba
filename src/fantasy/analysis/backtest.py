@@ -38,7 +38,9 @@ from fantasy.analysis.matchup import (
     category_outlook,
     matchup_outlook,
     project_side,
+    sides_for,
 )
+from fantasy.analysis.planner import plan_streams
 from fantasy.analysis.roles import all_roles, opportunities
 from fantasy.analysis.schedule import plan_days
 from fantasy.analysis.stats import CAT_FIELDS, REVERSE_CATS, average, cat_value
@@ -444,6 +446,51 @@ def projection_errors(snapshots: list[Snapshot]) -> dict | None:
     return {"player_weeks": player_weeks, "weeks": len(weeks), "stats": stats, "rows": rows}
 
 
+# ---- my own moves ----------------------------------------------------------
+
+
+def plan_value(snapshots: list[Snapshot]) -> dict | None:
+    """What the streaming plan offered on each day of my matchups, and the
+    acquisitions still unused at the last look of each finished week.
+
+    These are the model's own forecasts of a plan, not results: they say
+    how much win chance was on the table, not how much was won.
+    """
+    days = []
+    last_look: dict[int, dict] = {}
+    for snap in sorted(snapshots, key=lambda s: s.fetched_at):
+        ctx = Context.build(snap)
+        me, opp = ctx.my_team, snap.team(ctx.opponent_id(snap.my_team_id))
+        if me is None or opp is None:
+            continue
+        my_side, opp_side = sides_for(ctx, me.id)
+        mine, theirs = project_side(ctx, me, my_side), project_side(ctx, opp, opp_side)
+        candidates = _candidates(ctx)
+        with_habits(ctx, theirs, candidates, {opp.id: lineup_habits(ctx, opp.id)})
+        left = _acquisitions(ctx, me)["remaining"]
+        plan = plan_streams(ctx, mine, theirs, candidates, left)
+        day = {
+            "date": snap.fetched_at[:10],
+            "period": snap.league.matchup_period,
+            "acquisitions_left": left,
+            "before": plan["base"]["p_win_matchup"],
+            "after": plan["final"]["p_win_matchup"],
+            "steps": len(plan["steps"]),
+        }
+        last_look[day["period"]] = day
+        if left and mine.remaining_plans:
+            days.append(day)
+    if not days:
+        return None
+    current = max(last_look)
+    return {
+        "days": len(days),
+        "before": sum(d["before"] for d in days) / len(days),
+        "after": sum(d["after"] for d in days) / len(days),
+        "weeks": [day for period, day in sorted(last_look.items()) if period < current],
+    }
+
+
 # ---- the whole run ---------------------------------------------------------
 
 
@@ -466,6 +513,7 @@ def run_backtest(snapshots: list[Snapshot], models: dict[str, Adjust] | None = N
         "to": max(s.fetched_at for s in snapshots)[:10],
         "models": scored,
         "projections": projection_errors(snapshots),
+        "plan": plan_value(snapshots),
     }
 
 
@@ -547,6 +595,26 @@ def render_backtest(result: dict) -> str:
                 + "".join(f"{row['mae'][s]:>6.2f}" for s in stats)
                 + f"{row['relative']:>6.2f}"
             )
+    plan = result.get("plan")
+    if plan:
+        lines += [
+            "",
+            f"== My streaming plan, over {plan['days']} days with acquisitions left ==",
+            "The model's forecast of its own plan, not a result.",
+            f"Matchup win chance on an average day: {_pct(plan['before'])} with the roster "
+            f"as it stood, {_pct(plan['after'])} with the plan carried out.",
+        ]
+        for week in plan["weeks"]:
+            line = (
+                f"  Week {week['period']}, last look {week['date']}: "
+                f"{week['acquisitions_left']} acquisition(s) unused"
+            )
+            if week["steps"]:
+                line += (
+                    f"; the plan still had {week['steps']} pickup(s), win chance "
+                    f"{_pct(week['before'])} -> {_pct(week['after'])}"
+                )
+            lines.append(line)
     return "\n".join(lines) + "\n"
 
 

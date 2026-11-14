@@ -133,3 +133,22 @@ def test_check_command_prints_the_alert_and_needs_telegram_to_notify(tmp_path, m
     assert "first lock" in capsys.readouterr().out
     assert main(["check", "--demo", "--notify"]) == 1
     assert "Telegram is not set up" in capsys.readouterr().err
+
+
+def test_alert_carries_the_next_pickups_of_the_streaming_plan(view):
+    plan = view["stream_plan"]
+    assert plan["steps"] and plan["steps"][0]["next"]
+    due = [s for s in plan["steps"] if s["next"]]
+    assert {s["date"] for s in due} == {plan["steps"][0]["date"]}
+    pickups = [i for i in view["actions"]["items"] if i["kind"] == "pickup"]
+    assert [i["player_id"] for i in pickups] == [s["add_id"] for s in due]
+    text = alert_text(view)
+    for step in due:
+        assert f"{step['add']} ({step['add_team']}), drop {step['drop']}" in text
+    assert "acquisition(s) left this matchup" in text
+
+    # A plan that moves nothing isn't worth a message.
+    flat = {**view, "stream_plan": {**plan, "final": plan["base"]}}
+    from fantasy.analysis.actions import build_actions
+
+    assert not [i for i in build_actions(flat)["items"] if i["kind"] == "pickup"]

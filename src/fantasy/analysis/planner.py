@@ -24,7 +24,11 @@ from fantasy.espn.constants import BENCH_SLOT, C_SLOT, IR_SLOT
 from fantasy.models import RosterSpot
 from fantasy.timeutil import day_label
 
-CANDIDATES = 25
+# How far down the free agent ranking the plan looks. The ranking is by
+# general value; the player who swings this matchup's open categories is
+# often a specialist further down. Replayed over a month of snapshots, 60
+# found a better plan on one day in four and 100 added nothing more.
+CANDIDATES = 60
 DROPPABLE = 3
 # A pickup has to add this many expected categories to be worth one of the
 # limited acquisitions.
@@ -65,6 +69,7 @@ def plan_streams(
     theirs: SideProjection,
     free_agent_ids: list[int],
     acquisitions_left: int,
+    candidates: int = CANDIDATES,
 ) -> dict:
     team = mine.team
     players = ctx.snap.players
@@ -77,7 +82,7 @@ def plan_streams(
     base, base_p = _outlook(ctx, mine, theirs)
     current, current_p = base, base_p
     current_side = mine
-    pool = [pid for pid in free_agent_ids[:CANDIDATES] if pid in players]
+    pool = [pid for pid in free_agent_ids[:candidates] if pid in players]
     steps = []
     added: set[int] = set()
 
@@ -143,11 +148,14 @@ def plan_streams(
         pool.remove(fa_id)
         current, current_p, current_side = outlook, p_by_cat, side
 
+    steps.sort(key=lambda step: step["date"])  # found greediest first, carried out by date
+    for step in steps:
+        # The next thing to do: the earliest pickups of the plan.
+        step["next"] = step["date"] == steps[0]["date"]
     return {
         "base": base,
         "final": current,
-        # Found greediest first; carried out in date order.
-        "steps": sorted(steps, key=lambda step: step["date"]),
+        "steps": steps,
         "acquisitions_left": acquisitions_left,
         "droppable": [players[pid].name for pid in droppable_start],
         "usable_before": mine.usable_remaining,
