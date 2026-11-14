@@ -1,4 +1,4 @@
-"""Command line: serve | refresh | report | check | daily | export."""
+"""Command line: serve | refresh | report | check | daily | export | backtest."""
 
 from __future__ import annotations
 
@@ -65,6 +65,13 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Send the report file with the lineup check to Telegram, if set up",
     )
+    backtest = sub.add_parser(
+        "backtest",
+        parents=[common],
+        help="Replay the stored snapshots and score the forecasts against what happened",
+    )
+    backtest.add_argument("--db", type=Path, help="A snapshot database other than the usual one")
+    backtest.add_argument("--out", type=Path, help="Write to this file instead of printing")
     export = sub.add_parser(
         "export", parents=[common], help="Write the dashboard as static files for hosting"
     )
@@ -76,6 +83,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="The page alone, reading data.json from the repository's data branch",
     )
     what.add_argument("--data", action="store_true", help="Only data.json, for the data branch")
+    what.add_argument(
+        "--history",
+        action="store_true",
+        help="Only history.db: the snapshot history without the members' account names",
+    )
     export.add_argument("--repo", help="owner/name for --shell (default: $GITHUB_REPOSITORY)")
     return parser
 
@@ -89,6 +101,21 @@ def _write(text: str, out: Path | None) -> None:
     print(f"Report written to {out}")
 
 
+def _backtest(db: Path, out: Path | None) -> int:
+    from fantasy.analysis.backtest import render_backtest, run_backtest
+    from fantasy.store import SnapshotStore
+
+    if not db.is_file():
+        print(f"No snapshot history at {db}.", file=sys.stderr)
+        return 1
+    result = run_backtest(SnapshotStore(db).history())
+    if result is None:
+        print("No finished matchup in the stored snapshots yet.", file=sys.stderr)
+        return 1
+    _write(render_backtest(result), out)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         # A Windows console without UTF-8 would otherwise fail on accented names.
@@ -96,6 +123,8 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         config = load_config()
+        if args.command == "backtest":
+            return _backtest(args.db or config.db_path(args.demo), args.out)
         app = FantasyApp(config, demo=args.demo)
         if args.command == "serve":
             from fantasy.web.server import serve
@@ -145,19 +174,27 @@ def main(argv: list[str] | None = None) -> int:
                 print("Report sent to Telegram.")
             return 0
         if args.command == "export":
-            from fantasy.web.export import ExportError, export_data, export_shell, export_site
+            from fantasy.web.export import (
+                ExportError,
+                export_data,
+                export_history,
+                export_shell,
+                export_site,
+            )
 
             try:
                 if args.shell:
                     out = export_shell(args.out, args.repo)
                 elif args.data:
                     out = export_data(app, args.out)
+                elif args.history:
+                    out = export_history(app, args.out)
                 else:
                     out = export_site(app, args.out)
             except ExportError as exc:
                 print(exc, file=sys.stderr)
                 return 1
-            print(f"Dashboard written to {out}")
+            print(f"Written to {out}")
             return 0
         text = app.report(compact=args.compact, brief=getattr(args, "brief", False))
         if text is None:

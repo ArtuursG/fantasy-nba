@@ -1,4 +1,5 @@
 import json
+import socket
 import threading
 from http.server import ThreadingHTTPServer
 
@@ -120,3 +121,21 @@ def test_brief_report_is_served(server):
     full = httpx.get(server + "/api/report")
     assert brief.status_code == 200 and brief.text.startswith("# FANTASY MANAGER BRIEF")
     assert len(brief.text) < len(full.text)
+
+
+def test_page_carries_a_content_security_policy(server):
+    page = httpx.get(server + "/")
+    policy = page.headers["content-security-policy"]
+    assert "default-src 'none'" in policy and "frame-ancestors 'none'" in policy
+    assert "script-src 'self' 'sha256-" in policy and "'unsafe-inline'" not in policy.split(";")[1]
+    assert "content-security-policy" not in httpx.get(server + "/api/settings").headers
+
+
+def test_a_bad_content_length_is_refused(server):
+    host, port = server.removeprefix("http://").split(":")
+    with socket.create_connection((host, int(port)), timeout=10) as sock:
+        sock.sendall(
+            f"POST /api/refresh HTTP/1.1\r\nHost: {host}:{port}\r\n"
+            "Content-Length: nonsense\r\nConnection: close\r\n\r\n".encode()
+        )
+        assert sock.recv(64).startswith(b"HTTP/1.0 400")

@@ -506,7 +506,6 @@ def build_view(
                 "id": team.id,
                 "name": team.name,
                 "abbrev": team.abbrev,
-                "owners": team.owners,
                 "record": f"{team.wins}-{team.losses}-{team.ties}",
                 "waiver_rank": team.waiver_rank,
                 "is_me": team.id == snap.my_team_id,

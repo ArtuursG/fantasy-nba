@@ -159,6 +159,39 @@ class SnapshotStore:
             return None
         return from_dict(Snapshot, json.loads(zlib.decompress(row[0]).decode("utf-8")))
 
+    def history(self) -> list[Snapshot]:
+        """Every stored snapshot, oldest first (for the backtest)."""
+        with self._connect() as db:
+            rows = db.execute("SELECT payload FROM snapshots ORDER BY fetched_at, id").fetchall()
+        return [
+            from_dict(Snapshot, json.loads(zlib.decompress(row[0]).decode("utf-8"))) for row in rows
+        ]
+
+    def public_copy(self, dest: Path) -> Path:
+        """A copy of the history that is fit to publish: the same snapshots
+        without the league members' ESPN account names, which nothing in
+        the analysis reads."""
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.unlink(missing_ok=True)
+        source, copy = sqlite3.connect(self.path), sqlite3.connect(dest)
+        try:
+            source.backup(copy)
+            rows = copy.execute("SELECT id, payload FROM snapshots").fetchall()
+            for snapshot_id, payload in rows:
+                data = json.loads(zlib.decompress(payload).decode("utf-8"))
+                for team in data.get("teams") or []:
+                    team["owners"] = []
+                copy.execute(
+                    "UPDATE snapshots SET payload = ? WHERE id = ?",
+                    (zlib.compress(json.dumps(data).encode("utf-8")), snapshot_id),
+                )
+            copy.commit()
+            copy.execute("VACUUM")
+        finally:
+            source.close()
+            copy.close()
+        return dest
+
     def latest(self) -> Snapshot | None:
         return self._one("1 = 1", ())
 

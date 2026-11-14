@@ -28,12 +28,14 @@ jobs:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           version: "latest"
       - name: Restore snapshot history
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: data
           key: snapshots-${{ github.run_id }}-${{ github.run_attempt }}
@@ -53,14 +55,16 @@ jobs:
               rm -f data/fantasy.db
             fi
           fi
-      - run: uv sync --no-dev
+      # --locked: exactly the versions in uv.lock, or the run fails. This job
+      # holds the ESPN cookies and the Telegram token.
+      - run: uv sync --no-dev --locked
       - name: Read the league and write the reports
         run: |
           uv run fantasy daily --out reports/full.md --notify
           uv run fantasy report --compact --out reports/compact.md
       - name: Save snapshot history
         if: always()
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: data
           # A re-run gets its own key: a cache key can't be written twice.
@@ -68,7 +72,7 @@ jobs:
       # Run logs and artifacts of a public repository are public too.
       - name: Attach the reports
         if: ${{ github.event.repository.private }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fantasy-report
           path: reports/
@@ -82,7 +86,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           uv run fantasy export --data --out public
-          cp data/fantasy.db public/history.db
+          # Without the league members' ESPN account names: the branch is public.
+          uv run fantasy export --history --out public
           cd public
           git init -q -b data
           git add data.json history.db

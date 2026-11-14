@@ -72,3 +72,21 @@ def test_status_log_records_only_changes(tmp_path, snapshots):
         if p != pid and today.players[p].injury_status == yesterday.players[p].injury_status
     )
     assert len(history[unchanged]) == 1
+
+
+def test_public_copy_drops_the_members_account_names(tmp_path, today):
+    from dataclasses import replace
+    from datetime import date
+
+    named = replace(today, teams=[replace(t, owners=["espn-account"]) for t in today.teams])
+    store = SnapshotStore(tmp_path / "f.db")
+    store.save(named, date(2026, 10, 15))
+    store.record_forecast(named, 5, {"PTS": 0.7})
+
+    copy = SnapshotStore(store.public_copy(tmp_path / "public" / "history.db"))
+    assert b"espn-account" not in (tmp_path / "public" / "history.db").read_bytes()
+    snapshot = copy.latest()
+    assert snapshot is not None and all(t.owners == [] for t in snapshot.teams)
+    assert [t.name for t in snapshot.teams] == [t.name for t in today.teams]
+    assert copy.forecast_history(today.league.id, today.league.season)[0]  # the rest is kept
+    assert store.latest().teams[0].owners == ["espn-account"]  # the original is untouched

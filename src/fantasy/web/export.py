@@ -9,6 +9,10 @@ The page is the same as `fantasy serve`. Two ways to give it its data:
   Pages then only needs a new deployment when the page's code changes; the
   hourly run just replaces the file on the branch.
 
+The hosted page keeps a GitHub token in the browser (for Refresh), so it
+carries a content security policy: only its own scripts run, and it can
+talk to nothing but GitHub.
+
 Settings and the trade evaluator need the server, so the page hides them;
 Refresh asks GitHub to run the workflow instead.
 """
@@ -22,7 +26,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from fantasy.app import FantasyApp
-from fantasy.web.server import STATIC
+from fantasy.web.server import STATIC, content_policy
 
 HEADERS = """/*
   X-Robots-Tag: noindex
@@ -78,6 +82,11 @@ def export_data(app: FantasyApp, out: Path) -> Path:
     return path
 
 
+def export_history(app: FantasyApp, out: Path) -> Path:
+    """The snapshot history as it may be published (see `public_copy`)."""
+    return app.store.public_copy(out / "history.db")
+
+
 def _payload(app: FantasyApp) -> dict:
     view = app.view()
     if view is None:
@@ -119,5 +128,8 @@ def _write_page(out: Path, data_script: str) -> None:
     # Relative paths, so the page also works from a subfolder such as
     # https://<user>.github.io/<repo>/.
     page = page.replace('"/static/', '"static/')
+    charset = '<meta charset="utf-8">'
+    policy = f'<meta http-equiv="Content-Security-Policy" content="{content_policy(page)}">'
+    page = page.replace(charset, f"{charset}\n  {policy}", 1)
     (out / "index.html").write_text(page, encoding="utf-8")
     (out / "_headers").write_text(HEADERS, encoding="utf-8")

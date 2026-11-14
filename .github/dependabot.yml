@@ -1,0 +1,8 @@
+# The workflows name actions by commit, so a tag moved by someone else can't
+# change what runs next to the ESPN cookies. This keeps those commits current.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

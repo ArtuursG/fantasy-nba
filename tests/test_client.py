@@ -189,3 +189,23 @@ def test_lineup_totals_add_up_starters_box_scores_and_rescore_the_matchup(raw_to
     assert m.home.wins >= 2 and m.home.wins + m.home.losses + m.home.ties == 9
     assert snap.daily_totals[sp][home]["GP"] == 1 and snap.daily_totals[sp][away]["PTS"] == 20
     assert period in snap.pairings and [home, away] in snap.pairings[period]
+
+
+def test_cookies_are_only_sent_to_espn():
+    seen: dict[str, str | None] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen[request.url.host] = request.headers.get("cookie")
+        if request.url.host == "lm-api-reads.fantasy.espn.com":
+            return httpx.Response(302, headers={"Location": "https://elsewhere.example/league"})
+        return httpx.Response(200, json={})
+
+    client = EspnClient(
+        1, 2027, espn_s2="s2cookie", swid="{SWID}", transport=httpx.MockTransport(handler)
+    )
+    client.league(["mTeam"])
+    client.injuries()
+    client.close()
+    assert "espn_s2=s2cookie" in (seen["lm-api-reads.fantasy.espn.com"] or "")
+    assert "espn_s2=s2cookie" in (seen["site.api.espn.com"] or "")
+    assert seen["elsewhere.example"] is None  # a redirect off ESPN gets no cookies

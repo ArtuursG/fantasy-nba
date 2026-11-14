@@ -7,7 +7,11 @@ rebinding, and cross-site POSTs are refused by an Origin check.
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
+import re
+import sys
 import threading
 import traceback
 import webbrowser
@@ -20,6 +24,37 @@ from fantasy.config import ConfigError
 from fantasy.espn.client import EspnError
 
 STATIC = Path(__file__).parent / "static"
+# Where the page may send requests besides its own server: the hosted page
+# reads its data from GitHub and asks it to run the refresh.
+CONNECT = "https://api.github.com https://raw.githubusercontent.com"
+
+
+def content_policy(page: str) -> str:
+    """Content security policy for the dashboard page: scripts only from
+    its own files (and the inline ones already in `page`, by hash), and
+    requests only to itself and GitHub. League data is drawn as text, never
+    as HTML; this is the second line of defence if that ever slips."""
+    hashes = " ".join(
+        "'sha256-" + base64.b64encode(hashlib.sha256(body.encode("utf-8")).digest()).decode() + "'"
+        for body in re.findall(r"<script>(.*?)</script>", page, flags=re.S)
+    )
+    return "; ".join(
+        [
+            "default-src 'none'",
+            f"script-src 'self' {hashes}".rstrip(),
+            # The page sets bar widths through style attributes.
+            "style-src 'self' 'unsafe-inline'",
+            "img-src 'self' data:",
+            "font-src 'self'",
+            f"connect-src 'self' {CONNECT}",
+            "manifest-src 'self'",
+            "worker-src 'self'",
+            "base-uri 'none'",
+            "form-action 'none'",
+        ]
+    )
+
+
 MAX_BODY = 8 * 1024 * 1024
 STATIC_FILES = {
     "index.html": "text/html; charset=utf-8",
@@ -42,6 +77,12 @@ def make_handler(app: FantasyApp, allowed_hosts: set[str]) -> type[BaseHTTPReque
         def _send(self, status: int, body: bytes, content_type: str) -> None:
             self.send_response(status)
             self.send_header("Content-Type", content_type)
+            if content_type.startswith("text/html"):
+                # frame-ancestors only works as a header: no other site may
+                # put the dashboard in a frame.
+                policy = content_policy(body.decode("utf-8")) + "; frame-ancestors 'none'"
+                self.send_header("Content-Security-Policy", policy)
+                self.send_header("Referrer-Policy", "no-referrer")
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Content-Type-Options", "nosniff")
@@ -95,7 +136,13 @@ def make_handler(app: FantasyApp, allowed_hosts: set[str]) -> type[BaseHTTPReque
                 self._send(403, b"Cross-site request refused", "text/plain; charset=utf-8")
                 return
             path = urlsplit(self.path).path
-            length = int(self.headers.get("Content-Length") or 0)
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                length = -1
+            if length < 0:
+                self._send(400, b"Bad Content-Length", "text/plain; charset=utf-8")
+                return
             if length > MAX_BODY:
                 self._send(413, b"Too large", "text/plain; charset=utf-8")
                 return
@@ -140,6 +187,12 @@ def serve(app: FantasyApp, host: str, port: int, open_browser: bool = True) -> N
         else f"http://{host}:{port}/"
     )
     print(f"Dashboard running at {url}  (Ctrl+C to stop)")
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        print(
+            f"Warning: listening on {host}: anyone who can reach this machine on port {port} "
+            "can read the league data and change the settings. There is no login.",
+            file=sys.stderr,
+        )
     if open_browser:
         threading.Timer(0.6, webbrowser.open, args=(url,)).start()
     try:

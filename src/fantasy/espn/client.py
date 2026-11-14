@@ -20,6 +20,7 @@ from fantasy.espn.constants import FANTASY_BASE, INJURIES_URL, TRANSACTION_TYPES
 USER_AGENT = "fantasy-report/0.1 (personal league snapshot)"
 TIMEOUT = 30.0
 MAX_RETRIES = 2
+COOKIE_DOMAIN = ".espn.com"
 CARD_BATCH = 40  # what espn-api uses for player cards
 DAILY_ROSTER_DAYS = 13  # a matchup is at most two weeks outside the playoffs
 
@@ -54,7 +55,12 @@ class EspnClient:
     ) -> None:
         self.league_id = league_id
         self.season = season
-        cookies = {"espn_s2": espn_s2, "SWID": swid} if espn_s2 and swid else {}
+        # Tied to ESPN's domain: a client-wide cookie would also be sent to
+        # whatever host a redirect pointed at.
+        cookies = httpx.Cookies()
+        if espn_s2 and swid:
+            cookies.set("espn_s2", espn_s2, domain=COOKIE_DOMAIN)
+            cookies.set("SWID", swid, domain=COOKIE_DOMAIN)
         self._http = httpx.Client(
             cookies=cookies,
             headers={"User-Agent": USER_AGENT, "Accept": "application/json"},

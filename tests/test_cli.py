@@ -157,6 +157,8 @@ def test_export_shell_and_data_for_the_data_branch(env):
     assert main(["export", "--data", "--demo", "--out", str(data_dir)]) == 1  # no snapshot yet
     assert main(["refresh", "--demo"]) == 0
     assert main(["export", "--data", "--demo", "--out", str(data_dir)]) == 0
+    assert main(["export", "--history", "--demo", "--out", str(data_dir)]) == 0
+    assert (data_dir / "history.db").is_file() and (data_dir / "data.json").is_file()
     payload = json.loads((data_dir / "data.json").read_text(encoding="utf-8"))
     assert payload["report"]["brief"].startswith("# FANTASY MANAGER BRIEF")
     assert payload["view"]["meta"]["my_team"]
