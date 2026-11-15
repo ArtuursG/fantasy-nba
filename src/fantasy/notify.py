@@ -88,8 +88,13 @@ def alert_text(view: dict, always: bool = False) -> str | None:
     # The pickups the streaming plan wants next: the phone is where they get made.
     pickups = [i for i in (view.get("actions") or {}).get("items", []) if i["kind"] == "pickup"]
     lines += [f"{i['when']}: {i['text']} ({i['why']})" for i in pickups]
-    acquisitions = (view.get("stream_plan") or {}).get("acquisitions_left")
-    if pickups and acquisitions:
+    # And, in a week's last days, the ones that set up the next matchup.
+    setup = [i for i in (view.get("actions") or {}).get("items", []) if i["kind"] == "setup"]
+    lines += [f"Next week: {i['text']} ({i['why']})" for i in setup]
+    acquisitions = (view.get("stream_plan") or view.get("next_setup") or {}).get(
+        "acquisitions_left"
+    )
+    if (pickups or setup) and acquisitions:
         lines.append(f"{acquisitions} acquisition(s) left this matchup; they don't carry over.")
     if not lines and not always:
         return None

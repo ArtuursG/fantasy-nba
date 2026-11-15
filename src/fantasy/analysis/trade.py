@@ -24,9 +24,10 @@ from fantasy.analysis.matchup import (
     sides_for,
     team_strength,
 )
-from fantasy.analysis.schedule import positions
-from fantasy.espn.constants import BENCH_SLOT, C_SLOT, IR_SLOT
-from fantasy.models import RosterSpot
+from fantasy.analysis.schedule import positions, starting_slots
+from fantasy.analysis.season import GAMES_PER_SLOT_PER_WEEK, _cat_odds
+from fantasy.espn.constants import BENCH_SLOT, C_SLOT, IR_SLOT, UNAVAILABLE_STATUSES
+from fantasy.models import COUNTING_FIELDS, RosterSpot
 
 PUNT_EDGE = 0.1
 NEEDS = 3
@@ -207,6 +208,48 @@ def evaluate_trade(ctx: Context, give: list[int], get: list[int]) -> dict:
     }
 
 
+def weekly_categories(
+    ctx: Context, rosters: dict[int, list[int]] | None = None
+) -> dict[int, float]:
+    """Categories each team would expect to win in a week against the rest
+    of the league, one opponent after another, with its best healthy
+    players starting. `rosters` replaces some teams' players.
+
+    Unlike a rank, this knows how big a lead or a gap is: giving up threes
+    costs little while the lead in them is large, and catching up in steals
+    is worth most when the gap is small.
+    """
+    snap = ctx.snap
+    slots = len(starting_slots(snap.league.lineup_slots))
+    games = slots * GAMES_PER_SLOT_PER_WEEK
+    weeks: dict[int, dict[str, float]] = {}
+    for team in snap.teams:
+        ids = (rosters or {}).get(team.id) or [
+            s.player_id for s in team.roster if s.slot_id != IR_SLOT
+        ]
+        healthy = [
+            pid
+            for pid in ids
+            if pid in ctx.lines and snap.players[pid].injury_status not in UNAVAILABLE_STATUSES
+        ]
+        best = sorted(healthy, key=lambda pid: -ctx.values.get(pid, 0.0))[:slots]
+        weeks[team.id] = {
+            name: sum(getattr(ctx.lines[pid], name) for pid in best) / max(len(best), 1)
+            for name in COUNTING_FIELDS
+        }
+    cats = [c for c in snap.league.categories if c not in ctx.punt]
+    return {
+        team_id: sum(
+            _cat_odds(week, other, games, cat)
+            for other_id, other in weeks.items()
+            if other_id != team_id
+            for cat in cats
+        )
+        / max(len(weeks) - 1, 1)
+        for team_id, week in weeks.items()
+    }
+
+
 def _avg(ranks: dict[str, int], punt: tuple[str, ...]) -> float | None:
     counted = [r for c, r in ranks.items() if c not in punt]
     return round(sum(counted) / len(counted), 2) if counted else None
@@ -218,8 +261,12 @@ BASE_NEED = 0.15
 MIN_MY_GAIN = 0.15
 MIN_THEIR_GAIN = 0.05
 MAX_PARTNER_VALUE_LOSS = 0.25
-SHORTLIST = 30
-SHORTLIST_PER_PARTNER = 5
+SHORTLIST = 90
+SHORTLIST_PER_PARTNER = 10
+# Expected categories a week against the league: what a trade has to add
+# for me, and the most it may cost the partner (rounding room, no more).
+MIN_WEEKLY_GAIN = 0.1
+MAX_PARTNER_WEEKLY_LOSS = 0.02
 IDEAS = 8
 PER_PARTNER = 2
 
@@ -242,8 +289,10 @@ def find_trades(ctx: Context, strength: dict[int, dict]) -> list[dict]:
 
     A quick needs-weighted score picks a shortlist (a spot freed by a 2-for-1
     counts as a replacement-level pickup, the partner drops his weakest
-    player); the exact evaluation then keeps the trades that improve my
-    average category rank without hurting the partner's, best first.
+    player). The exact evaluation then keeps the trades after which I'd
+    expect to win more categories a week against the league and the partner
+    no fewer (`weekly_categories`), best for me first: a trade he loses by
+    is one he won't make.
     """
     snap = ctx.snap
     me = ctx.my_team
@@ -295,21 +344,34 @@ def find_trades(ctx: Context, strength: dict[int, dict]) -> list[dict]:
             break
 
     ideas = []
+    weekly = weekly_categories(ctx)
     for _, team, gives, gets in shortlist:
+        new = weekly_categories(
+            ctx,
+            {
+                me.id: [pid for pid in mine if pid not in gives] + gets,
+                team.id: [pid for pid in active[team.id] if pid not in gets] + gives,
+            },
+        )
+        if (
+            new[me.id] - weekly[me.id] < MIN_WEEKLY_GAIN
+            or new[team.id] - weekly[team.id] < -MAX_PARTNER_WEEKLY_LOSS
+        ):
+            continue
         exact = evaluate_trade(ctx, gives, gets)
         before, after = exact["avg_rank_before"], exact["avg_rank_after"]
         theirs_before = _mean([r["rank_before"] for r in exact["theirs"]])
         theirs_after = _mean([r["rank_after"] for r in exact["theirs"]])
-        if before is None or after is None or after >= before:
-            continue
-        if theirs_after > theirs_before + 0.1:
-            continue
         ideas.append(
             {
                 "partner": team.name,
                 "partner_id": team.id,
                 "give": exact["give"],
                 "get": exact["get"],
+                "weekly_before": round(weekly[me.id], 2),
+                "weekly_after": round(new[me.id], 2),
+                "partner_weekly_before": round(weekly[team.id], 2),
+                "partner_weekly_after": round(new[team.id], 2),
                 "avg_rank_before": before,
                 "avg_rank_after": after,
                 "partner_rank_before": round(theirs_before, 2),
@@ -324,8 +386,8 @@ def find_trades(ctx: Context, strength: dict[int, dict]) -> list[dict]:
         )
     ideas.sort(
         key=lambda i: (
-            i["avg_rank_after"] - i["avg_rank_before"],
-            i["partner_rank_after"] - i["partner_rank_before"],
+            i["weekly_before"] - i["weekly_after"],
+            i["partner_weekly_before"] - i["partner_weekly_after"],
         )
     )
     out, per_partner = [], {}

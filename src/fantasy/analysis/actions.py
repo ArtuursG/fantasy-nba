@@ -1,13 +1,15 @@
 """Today's to-do list: the few things worth doing before lineup lock.
 
-Built from the rest of the view (lineup check, streaming plan, opponent
-moves, category plan), so it says nothing the detailed panels don't; it
+Built from the rest of the view (lineup check, streaming plan, next week's
+setup, opponent moves, category plan), so it says nothing the detailed panels don't; it
 only puts the actionable parts first and in order.
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+
+from fantasy.analysis.nextweek import setup_text
 
 # A plan is put on the to-do list when it moves the matchup this much, in
 # expected categories or in the chance of winning it.
@@ -60,6 +62,23 @@ def build_actions(view: dict) -> dict:
                 )
             )
 
+    setup = view.get("next_setup")
+    if setup and setup["due"]:
+        for step in setup["steps"]:
+            now = step["this_week"]
+            why = f"+{step['gain']:.1f} expected categories next week vs {setup['opponent']}"
+            if now:
+                why += f", {now['categories_change']:+.1f} in this one"
+            items.append(
+                _item(
+                    "setup",
+                    setup_text(step),
+                    why,
+                    "before this week ends",
+                    player_id=step["add_id"],
+                )
+            )
+
     matchup = view.get("matchup") or {}
     streaming = matchup.get("opp_streaming")
     if streaming and streaming["expected_adds"] >= 0.5:
@@ -104,7 +123,7 @@ def build_actions(view: dict) -> dict:
                 parts.append("protect " + ", ".join(protect))
             items.append(_item("focus", "This week: " + "; ".join(parts), None, None))
 
-    todo = [i for i in items if i["kind"] in ("lineup", "check", "pickup")]
+    todo = [i for i in items if i["kind"] in ("lineup", "check", "pickup", "setup")]
     return {
         "day": lineup["day"] if lineup else None,
         "is_today": bool(lineup and lineup["is_today"]),

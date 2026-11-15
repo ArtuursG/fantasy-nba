@@ -25,6 +25,7 @@ import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 
+from fantasy.analysis.backtest import run_backtest
 from fantasy.app import FantasyApp
 from fantasy.web.server import STATIC, content_policy
 
@@ -99,6 +100,9 @@ def _payload(app: FantasyApp) -> dict:
             "compact": app.report(compact=True),
             "brief": app.report(brief=True),
         },
+        # Every stored snapshot replayed against what happened: too slow to
+        # work out on each page view, cheap once per export.
+        "backtest": run_backtest(app.store.history()),
         "exported_at": datetime.now(UTC).isoformat(timespec="seconds"),
         # Set when GitHub Actions builds the page: the page's Refresh starts
         # this workflow again.

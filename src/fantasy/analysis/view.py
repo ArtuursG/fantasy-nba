@@ -27,6 +27,7 @@ from fantasy.analysis.matchup import (
     sides_for,
     team_strength,
 )
+from fantasy.analysis.nextweek import next_week_setup
 from fantasy.analysis.planner import plan_streams
 from fantasy.analysis.punt import punt_analysis
 from fantasy.analysis.rankings import RANGES, default_range, rank_players
@@ -607,6 +608,15 @@ def build_view(
         "stream_plan": stream_plan,
         "strategy": strategy,
         "next_matchup": next_matchup(ctx, strength),
+        "next_setup": next_week_setup(
+            ctx,
+            mine if matchup else None,
+            theirs if matchup else None,
+            _acquisitions(ctx, me)["remaining"],
+            stream_plan,
+        )
+        if me
+        else None,
         "trade_targets": trade_targets(ctx, strength),
         "season_standings": _season_standings(ctx),
         "acquisitions": _acquisitions(ctx, me) if me else None,

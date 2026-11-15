@@ -512,13 +512,33 @@ def test_first_forecast_scores_the_calls():
     assert f["p_win_matchup"] == 0.55 and f["called"] == 1 and f["judged"] == 2
 
 
-def test_trade_ideas_improve_me_without_hurting_the_partner(view, today):
-    ideas = view["trade_ideas"]
+def test_weekly_categories_split_every_category_between_two_teams(ctx, today):
+    from fantasy.analysis.trade import weekly_categories
+
+    weekly = weekly_categories(ctx)
+    cats = len(today.league.categories)
+    assert set(weekly) == {t.id for t in today.teams}
+    # Each category of each pairing goes to one side or the other.
+    assert sum(weekly.values()) == pytest.approx(cats * len(today.teams) / 2)
+    # A team given the league's best players expects more.
+    me = today.my_team_id
+    best = sorted(ctx.values, key=ctx.values.get, reverse=True)[:13]
+    assert weekly_categories(ctx, {me: best})[me] > weekly[me]
+
+
+def test_trade_ideas_improve_me_without_hurting_the_partner(ctx, today, monkeypatch):
+    from fantasy.analysis import trade
+    from fantasy.analysis.matchup import team_strength
+
+    assert isinstance(trade.find_trades(ctx, team_strength(ctx)), list)
+    # The invented league is evenly matched: look at smaller gains too.
+    monkeypatch.setattr(trade, "MIN_WEEKLY_GAIN", 0.02)
+    ideas = trade.find_trades(ctx, team_strength(ctx))
     assert ideas
     mine = {s.player_id for s in today.team(today.my_team_id).roster}
     for t in ideas:
-        assert t["avg_rank_after"] < t["avg_rank_before"]
-        assert t["partner_rank_after"] <= t["partner_rank_before"] + 0.1
+        assert t["weekly_after"] > t["weekly_before"]
+        assert t["partner_weekly_after"] >= t["partner_weekly_before"] - 0.03
         assert {p["id"] for p in t["give"]} <= mine
         assert len(t["get"]) == 1 and 1 <= len(t["give"]) <= 2
     partners = [t["partner_id"] for t in ideas]

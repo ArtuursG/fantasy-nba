@@ -133,6 +133,7 @@ def test_export_writes_a_static_dashboard(env):
     data = (out / "static" / "data.js").read_text(encoding="utf-8")
     payload = json.loads(data.removeprefix("window.FANTASY_STATIC = ").rstrip().rstrip(";"))
     assert payload["report"]["full"].startswith("# DAILY FANTASY REPORT")
+    assert "backtest" in payload  # None until a stored week has finished
     assert payload["view"]["meta"]["my_team"]
     assert (out / "static" / "fonts" / "big-shoulders-latin.woff2").exists()
     assert not (out / "static" / "index.html").exists()

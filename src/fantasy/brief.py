@@ -654,8 +654,9 @@ def _trades(view: dict, add) -> None:
             [
                 f"- Model trade idea with {t['partner']}: give "
                 f"{', '.join(p['name'] for p in t['give'])}, get "
-                f"{', '.join(p['name'] for p in t['get'])} (my average category rank "
-                f"{t['avg_rank_before']} -> {t['avg_rank_after']}; helps "
+                f"{', '.join(p['name'] for p in t['get'])} (my expected categories a week "
+                f"vs the league {t['weekly_before']:.2f} -> {t['weekly_after']:.2f}, theirs "
+                f"{t['partner_weekly_before']:.2f} -> {t['partner_weekly_after']:.2f}; helps "
                 f"{', '.join(t['helps_me']) or '-'})"
             ]
         )
@@ -680,6 +681,23 @@ def _next_matchup(view: dict, add) -> None:
             [
                 "Roster category ranks me/them: "
                 + ", ".join(f"{c} {r['me']}/{r['opp']}" for c, r in ranks.items())
+            ]
+        )
+    setup = view.get("next_setup")
+    if setup and setup["steps"]:
+        swaps = "; ".join(
+            f"add {s['add']} ({s['add_games']} games) for {s['drop']} ({s['drop_games']}): "
+            f"{s['gain']:+.2f} cats next week"
+            + (f", {s['this_week']['categories_change']:+.2f} this week" if s["this_week"] else "")
+            for s in setup["steps"]
+        )
+        add(
+            [
+                f"Model's setup for it with the {setup['acquisitions_left']} acquisition(s) "
+                f"this week's streaming plan leaves unused, which don't carry over: {swaps}. "
+                f"Win chance next week "
+                f"{setup['base']['p_win_matchup'] * 100:.0f}% -> "
+                f"{setup['final']['p_win_matchup'] * 100:.0f}%."
             ]
         )
 

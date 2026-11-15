@@ -505,6 +505,7 @@ const ACTION_TAGS = {
   lineup: ["Lineup", "bad"],
   check: ["Check", "warn"],
   pickup: ["Pickup", "good"],
+  setup: ["Next week", "good"],
   opponent: ["Opponent", ""],
   focus: ["Focus", ""],
 };
@@ -860,6 +861,67 @@ function renderStrategy(v) {
   );
 }
 
+// The exported page carries a backtest of the whole snapshot history.
+function renderBacktest() {
+  const bt = STATIC && STATIC.backtest;
+  if (!bt) return NO_SERVER ? null : card("Model check", false, h("p", { class: "muted" }, "Run `uv run fantasy backtest` to replay the stored snapshots against what happened; the hosted page shows it here."));
+  const b = (x, d = 3) => (x === null || x === undefined ? "-" : x.toFixed(d));
+  const share = (x) => (x === null || x === undefined ? "-" : Math.round(x * 100) + "%");
+  const models = Object.entries(bt.models).filter(([, m]) => m);
+  if (!models.length) return null;
+  const first = models[0][1];
+  const plan = bt.plan;
+  const proj = bt.projections;
+  return card(
+    "Model check: every snapshot replayed",
+    true,
+    h("p", {}, `${bt.snapshots} snapshots, ${bt.from} to ${bt.to}: each one forecast again with the model as it is now, for every pairing in the league, and scored against the results (${first.pairings} pairings, ${first.weeks} weeks). Brier 0.250 is a coin flip; a spread of 1.0 means the model knows how unsure it is, above that it is too sure.`),
+    table(["Model", "Categories: Brier", "Favourite won", "Matchups: Brier", "Favourite won", "Spread"], models.map(([name, m]) => ({
+      cells: [{ node: name, cls: "strong" }, b(m.categories.brier), share(m.categories.hit), b(m.matchups.brier), share(m.matchups.hit), m.spread ? b(m.spread.rms, 2) : "-"],
+    })), { textCols: [0] }),
+    h("h3", {}, "Said and happened"),
+    table(["Confidence", "Forecasts", "Said", "Happened"], first.calibration.map((c) => ({ cells: [c.range, c.forecasts, share(c.expected), share(c.actual)] }))),
+    h("h3", {}, "By category"),
+    table(["Cat", "Brier", "Favourite won", "Spread", "Totals vs early projection"], first.by_category.map((c) => ({
+      cells: [{ node: c.cat, cls: "strong" }, b(c.brier), share(c.hit), c.spread ? b(c.spread.robust, 2) : "-", c.totals_gap === null || c.totals_gap === undefined ? "-" : signed(c.totals_gap * 100, 0) + "%"],
+    }))),
+    plan ? h("h3", {}, "My streaming plan") : null,
+    plan ? h("p", {}, `Over ${plan.days} days with acquisitions left, the matchup win chance averaged ${share(plan.before)} with the roster as it stood and ${share(plan.after)} with the plan carried out (the model's forecast of its own plan, not a result).`) : null,
+    plan && plan.weeks.length ? h("ul", { class: "plain" }, plan.weeks.map((w) => h("li", {}, `Week ${w.period}, last look ${w.date}: ${w.acquisitions_left} acquisition(s) unused` + (w.steps ? `; the plan still had ${w.steps} pickup(s), win chance ${share(w.before)} → ${share(w.after)}` : "")))) : null,
+    proj ? h("h3", {}, "Player projections") : null,
+    proj ? h("p", { class: "note" }, `Gap per game between a line at the start of a week and that week's average, against the best source (1.00), over ${proj.player_weeks} player-weeks: ` + proj.rows.map((r) => `${r.label} ${r.relative.toFixed(2)}`).join(", ") + ".") : null
+  );
+}
+
+function renderNextSetup(v) {
+  const s = v.next_setup;
+  if (!s) return null;
+  const title = `Set up next week: vs ${s.opponent}`;
+  if (!s.steps.length) {
+    return card(title, false, h("p", { class: "muted" }, s.acquisitions_left ? "No swap of my weakest players helps over the two weeks." : "No acquisitions left this week after the streaming plan's."));
+  }
+  const pctText = (x) => Math.round(x * 100) + "%";
+  return card(
+    title,
+    true,
+    stats(
+      stat("Expected categories", `${s.base.expected_wins.toFixed(1)} → ${s.final.expected_wins.toFixed(1)}`),
+      stat("Win chance next week", `${pctText(s.base.p_win_matchup)} → ${pctText(s.final.p_win_matchup)}`, "good"),
+      stat("Usable games", `${s.usable_before} → ${s.usable_after}`),
+      stat("Acquisitions left", `${s.acquisitions_left}`, s.days_left <= 2 ? "warn" : "")
+    ),
+    table(["Add", "Games", "Drop", "Games", "Next week", "Helps", "This week"], s.steps.map((x) => ({
+      cells: [
+        { node: [playerLink(x.add, x.add_id), ` (${x.add_team})${x.waiver ? " · waivers" : ""}`] }, x.add_games,
+        { node: playerLink(x.drop, x.drop_id) }, x.drop_games,
+        { node: signed(x.gain, 2) + " cats", cls: "good" }, x.helps.join(", ") || "-",
+        x.this_week ? { node: signed(x.this_week.categories_change, 2) + " cats", cls: x.this_week.categories_change < -0.05 ? "bad" : "" } : "-",
+      ],
+    })), { textCols: [0, 2, 5] }),
+    h("p", { class: "note" }, `Pickups made before this week ends use this week's acquisitions, which are gone on Monday, and play next week (${s.dates[0]} – ${s.dates[1]}). This comes after the streaming plan's ${s.planned_first} pickup(s): it starts from the roster they leave and uses the acquisitions they don't. Each swap is kept for what it adds over both weeks. Only the weakest players are dropped (${s.droppable.join(", ")}).`)
+  );
+}
+
 function renderNextMatchup(v) {
   const nm = v.next_matchup;
   if (!nm) return null;
@@ -890,16 +952,16 @@ function tradeIdeas(v) {
   const rows = ideas.map((t) => ({
     cells: [
       { node: t.partner, cls: "strong" }, { node: names(t.give) }, { node: names(t.get) },
-      { node: `${t.avg_rank_before} → ${t.avg_rank_after}`, cls: "good" },
-      { node: `${t.partner_rank_before} → ${t.partner_rank_after}`, cls: t.partner_rank_after < t.partner_rank_before ? "good" : "" },
+      { node: `${t.weekly_before.toFixed(2)} → ${t.weekly_after.toFixed(2)}`, cls: "good" },
+      { node: `${t.partner_weekly_before.toFixed(2)} → ${t.partner_weekly_after.toFixed(2)}`, cls: t.partner_weekly_after > t.partner_weekly_before ? "good" : "" },
       t.helps_me.join(", ") || "-", t.helps_them.join(", ") || "-",
       t.matchup ? `${percent(t.matchup.p_win_before)} → ${percent(t.matchup.p_win_after)}` : "-",
     ],
   }));
   return [
     h("h3", {}, "Trade ideas: good for both sides"),
-    table(["With", "You give", "You get", "Your avg rank", "Their avg rank", "Helps you in", "Helps them in", "This matchup"], rows, { textCols: [0, 1, 2, 5, 6] }),
-    h("p", { class: "note" }, "Found by scoring every 1-for-1 and 2-for-1 on what each team needs (its weakest categories count most), then checked exactly: your average category rank improves (lower is better, your punt left out) and theirs doesn't get worse. A 2-for-1 means they drop someone and you get a free spot."),
+    table(["With", "You give", "You get", "Your cats / week", "Their cats / week", "Helps you in", "Helps them in", "This matchup"], rows, { textCols: [0, 1, 2, 5, 6] }),
+    h("p", { class: "note" }, "Found by scoring every 1-for-1 and 2-for-1 on what each team needs, then checked exactly: the categories you'd expect to win in a week against the rest of the league go up (your punt left out) and theirs don't go down. It counts how big a lead or a gap is, so a trade can give away a category you win easily and still be a gain. A 2-for-1 means they drop someone and you get a free spot."),
   ];
 }
 
@@ -1698,7 +1760,7 @@ function render(view, demo) {
   // Some panels are absent (no matchup, no season totals yet): skip them.
   const sections = {
     today: [renderActions(view), earlyInWeek(view) ? renderRecap(view) : null, renderScoreboard(view), renderLineup(view), renderChanges(view), renderAlerts(view), renderAcquisitions(view), renderPickups(view)],
-    matchup: [renderMatchup(view), renderTrend(view), renderByDay(view), renderRecap(view), renderTargets(view), renderWhatIf(view), renderGameCounts(view), renderWeekGrid(view), renderStrategy(view), renderAccuracy(view), renderSchedule(view), renderStreamPlan(view), renderSimulator(view), renderNextMatchup(view)],
+    matchup: [renderMatchup(view), renderTrend(view), renderByDay(view), renderRecap(view), renderTargets(view), renderWhatIf(view), renderGameCounts(view), renderWeekGrid(view), renderStrategy(view), renderAccuracy(view), renderBacktest(), renderSchedule(view), renderStreamPlan(view), renderSimulator(view), renderNextSetup(view), renderNextMatchup(view)],
     roster: [renderMyRoster(view), renderAdvanced(view)],
     wire: [renderPickups(view), renderHot(view), renderFreeAgents(view), renderTransactions(view), renderPopular(view)],
     league: [renderStandings(view), renderSeason(view), renderSeasonOutlook(view), renderPunt(view), renderHabits(view), renderStrength(view), renderTrade(view), renderTeams(view)],

@@ -226,6 +226,7 @@ class Report:
         self.opponent_changes()
         self.schedule()
         self.next_matchup()
+        self.next_setup()
         self.acquisitions()
         self.waiver_order()
         self.important_changes()
@@ -734,6 +735,52 @@ class Report:
             )
             self.add("", f"Free agents who fit the chase categories best: {fits}")
 
+    def next_setup(self) -> None:
+        self.section("NEXT WEEK SETUP")
+        setup = self.view.get("next_setup")
+        if not setup:
+            self.add("No next matchup in the schedule.")
+            return
+        base, final = setup["base"], setup["final"]
+        if not setup["steps"]:
+            reason = (
+                "no acquisitions left this week after the streaming plan's"
+                if not setup["acquisitions_left"]
+                else "no swap of my weakest players helps over the two weeks"
+            )
+            self.add(f"Nothing to pick up now for matchup {setup['period']}: {reason}.")
+            return
+        self.add(
+            f"Pickups made before this week ends cost this week's acquisitions "
+            f"({setup['acquisitions_left']} left after the streaming plan's "
+            f"{setup['planned_first']}, gone on Monday) and play next week vs "
+            f"{setup['opponent']} ({setup['dates'][0]} - {setup['dates'][1]}): expected "
+            f"categories {base['expected_wins']:.1f} -> {final['expected_wins']:.1f}, win chance "
+            f"{base['p_win_matchup'] * 100:.0f}% -> {final['p_win_matchup'] * 100:.0f}%, usable "
+            f"games {setup['usable_before']} -> {setup['usable_after']}. Only the weakest "
+            f"players are dropped ({', '.join(setup['droppable'])}).",
+            "",
+        )
+        self.add(
+            *table(
+                ["Add", "Games", "Drop", "Games", "Next week", "Helps", "This week"],
+                (
+                    [
+                        f"{s['add']} ({s['add_team']})" + (" [waivers]" if s["waiver"] else ""),
+                        s["add_games"],
+                        s["drop"],
+                        s["drop_games"],
+                        f"{signed(s['gain'], 2)} cats",
+                        ", ".join(s["helps"]) or "-",
+                        f"{signed(s['this_week']['categories_change'], 2)} cats"
+                        if s["this_week"]
+                        else "-",
+                    ]
+                    for s in setup["steps"]
+                ),
+            )
+        )
+
     def next_matchup(self) -> None:
         self.section("NEXT MATCHUP PREVIEW")
         nm = self.view.get("next_matchup")
@@ -1179,8 +1226,10 @@ class Report:
             self.add("No trade found that helps both teams right now.")
             return
         self.add(
-            "Every 1-for-1 and 2-for-1 scored on each team's needs, then checked exactly: my "
-            "average category rank improves (punt left out) and the partner's doesn't get worse.",
+            "Every 1-for-1 and 2-for-1 scored on each team's needs, then checked exactly: the "
+            "categories I'd expect to win in a week against the rest of the league go up (punt "
+            "left out) and the partner's don't go down. That counts how big a lead or a gap "
+            "is, so a trade can give away a category I win easily and still be a gain.",
             "",
         )
         for t in ideas:
@@ -1193,10 +1242,11 @@ class Report:
                     f"{t['matchup']['p_win_after'] * 100:.0f}%"
                 )
             self.add(
-                f"- With {t['partner']}: give {give}, get {get} | my avg rank "
-                f"{t['avg_rank_before']} -> {t['avg_rank_after']} | theirs "
-                f"{t['partner_rank_before']} -> {t['partner_rank_after']} | helps me in "
-                f"{', '.join(t['helps_me']) or '-'}; them in {', '.join(t['helps_them']) or '-'}"
+                f"- With {t['partner']}: give {give}, get {get} | my expected categories a "
+                f"week {t['weekly_before']:.2f} -> {t['weekly_after']:.2f} | theirs "
+                f"{t['partner_weekly_before']:.2f} -> {t['partner_weekly_after']:.2f} | "
+                f"helps me in {', '.join(t['helps_me']) or '-'}; "
+                f"them in {', '.join(t['helps_them']) or '-'}"
                 f"{matchup}"
             )
 
